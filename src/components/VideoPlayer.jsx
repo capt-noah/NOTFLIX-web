@@ -287,9 +287,21 @@ export const VideoPlayer = () => {
 
     const activeStreamUrl = availableQualities[selectedQuality] || resolvedStream?.playUrl || resolvedStream?.url || '';
 
+    const isEmbedStream = typeof activeStreamUrl === 'string' && (
+        activeStreamUrl.includes('/embed') || 
+        activeStreamUrl.includes('vidlink.pro') || 
+        activeStreamUrl.includes('vidsrc.to') || 
+        activeStreamUrl.includes('2embed.cc') || 
+        activeStreamUrl.includes('autoembed.to')
+    );
+
     // Hls.js or HTML5 Native Video Mounting (For direct MP4/HLS streams)
     useEffect(() => {
-        if (!activeStreamUrl || !videoRef.current) {
+        if (!activeStreamUrl || isEmbedStream || !videoRef.current) {
+            if (isEmbedStream) {
+                setIsResolving(false);
+                setIsVideoBuffering(false);
+            }
             return;
         }
         const video = videoRef.current;
@@ -1098,43 +1110,97 @@ export const VideoPlayer = () => {
                         </div>
                     </div>
 
-                    {/* Top Right: Completely Clean (No badges or server selectors) */}
-                    <div className="flex items-center gap-3">
-                        {/* Clean minimal spacer / header anchor */}
+                    {/* Top Right: Server & Quality Switcher Dropdown */}
+                    <div className="flex items-center gap-2">
+                        {Object.keys(availableQualities).length > 1 && (
+                            <div className="relative group">
+                                <button
+                                    className="px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-lg active:scale-95"
+                                    title="Switch Streaming Server"
+                                >
+                                    <span className="material-symbols-outlined text-base text-red-500">dns</span>
+                                    <span className="max-w-[130px] truncate">{selectedQuality}</span>
+                                    <span className="material-symbols-outlined text-sm text-white/60">expand_more</span>
+                                </button>
+
+                                {/* Dropdown Menu */}
+                                <div className="absolute right-0 top-full mt-2 w-56 py-1.5 rounded-xl bg-neutral-900/95 border border-white/15 backdrop-blur-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                                    <div className="px-3 py-1 text-[10px] font-bold text-white/40 uppercase tracking-wider border-b border-white/10 mb-1">
+                                        Select Server / Quality
+                                    </div>
+                                    {Object.keys(availableQualities).map(qKey => (
+                                        <button
+                                            key={qKey}
+                                            onClick={() => {
+                                                setSelectedQuality(qKey);
+                                                setIsResolving(true);
+                                                setIsVideoBuffering(true);
+                                            }}
+                                            className={`w-full px-3 py-2 text-left text-xs font-medium flex items-center justify-between transition cursor-pointer ${
+                                                selectedQuality === qKey 
+                                                    ? 'bg-red-600/20 text-red-400 font-bold' 
+                                                    : 'text-white/80 hover:bg-white/10 hover:text-white'
+                                            }`}
+                                        >
+                                            <span>{qKey}</span>
+                                            {selectedQuality === qKey && (
+                                                <span className="material-symbols-outlined text-sm text-red-500">check</span>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {/* ═══════════════ VIDEO STAGE (Pure Native HTML5 & Hls.js Cinema Engine) ═══════════════ */}
+                {/* ═══════════════ VIDEO STAGE (Seamless Dual-Engine Cinema Player) ═══════════════ */}
                 <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden">
-                    <video
-                        ref={videoRef}
-                        playsInline
-                        autoPlay
-                        className="w-full h-full object-contain cursor-pointer"
-                        onClick={togglePlay}
-                        onTimeUpdate={handleTimeUpdate}
-                        onLoadedMetadata={handleLoadedMetadata}
-                        onEnded={handleVideoEnded}
-                        onError={handleVideoError}
-                        onWaiting={() => setIsVideoBuffering(true)}
-                        onPlaying={() => {
-                            setIsPlaying(true);
-                            setIsVideoBuffering(false);
-                            setResolutionError(false);
-                        }}
-                    >
-                        {/* Subtitle WebVTT Tracks */}
-                        {subtitles.map((sub, idx) => (
-                            <track
-                                key={`${sub.srclang}-${idx}`}
-                                kind="subtitles"
-                                label={sub.label}
-                                src={sub.vttUrl || sub.url}
-                                srcLang={sub.srclang}
-                                default={sub.srclang === selectedSubtitle}
-                            />
-                        ))}
-                    </video>
+                    {isEmbedStream ? (
+                        <iframe
+                            key={activeStreamUrl}
+                            src={activeStreamUrl}
+                            title={currentMedia.title}
+                            className="w-full h-full border-0 bg-black absolute inset-0 z-10"
+                            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                            sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"
+                            onLoad={() => {
+                                setIsResolving(false);
+                                setIsVideoBuffering(false);
+                                setResolutionError(false);
+                            }}
+                        />
+                    ) : (
+                        <video
+                            ref={videoRef}
+                            playsInline
+                            autoPlay
+                            className="w-full h-full object-contain cursor-pointer absolute inset-0 z-10"
+                            onClick={togglePlay}
+                            onTimeUpdate={handleTimeUpdate}
+                            onLoadedMetadata={handleLoadedMetadata}
+                            onEnded={handleVideoEnded}
+                            onError={handleVideoError}
+                            onWaiting={() => setIsVideoBuffering(true)}
+                            onPlaying={() => {
+                                setIsPlaying(true);
+                                setIsVideoBuffering(false);
+                                setResolutionError(false);
+                            }}
+                        >
+                            {/* Subtitle WebVTT Tracks */}
+                            {subtitles.map((sub, idx) => (
+                                <track
+                                    key={`${sub.srclang}-${idx}`}
+                                    kind="subtitles"
+                                    label={sub.label}
+                                    src={sub.vttUrl || sub.url}
+                                    srcLang={sub.srclang}
+                                    default={sub.srclang === selectedSubtitle}
+                                />
+                            ))}
+                        </video>
+                    )}
 
                     {/* Loading & Buffering Spinner */}
                     {(isResolving || isVideoBuffering) && !resolutionError && (

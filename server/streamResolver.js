@@ -145,34 +145,53 @@ export async function resolveStream({ tmdbId, type = 'movie', season = 1, episod
     // Step 2: Fetch Subtitles in parallel
     const subtitles = await resolveSubtitles(imdbId, type, season, episode);
 
-    // Step 3: Direct HLS & CDN Master Stream Resolution
-    // High-speed multi-quality streams proxied directly through our HLS cleaner
-    const directHlsStreams = {
-        '4K UHD': `/api/stream/proxy?url=${encodeURIComponent(`https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`)}`,
-        '1080p FHD': `/api/stream/proxy?url=${encodeURIComponent(`https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`)}`,
-        '720p HD': `/api/stream/proxy?url=${encodeURIComponent(`https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`)}`,
+    // Step 3: Direct HLS & Curated Multi-CDN Stream Resolution
+    const isTv = type === 'tv';
+    const vidlinkUrl = isTv
+        ? `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}?primaryColor=e50914&autoplay=true&icons=vid`
+        : `https://vidlink.pro/movie/${tmdbId}?primaryColor=e50914&autoplay=true&icons=vid`;
+
+    const vidsrcUrl = isTv
+        ? `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://vidsrc.to/embed/movie/${tmdbId}`;
+
+    const embed2Url = isTv
+        ? `https://www.2embed.cc/embedtv/${tmdbId}&s=${season}&e=${episode}`
+        : `https://www.2embed.cc/embed/${tmdbId}`;
+
+    const autoembedUrl = isTv
+        ? `https://autoembed.to/tv/tmdb/${tmdbId}/${season}/${episode}`
+        : `https://autoembed.to/movie/tmdb/${tmdbId}`;
+
+    const masterHlsUrl = `/api/stream/proxy?url=${encodeURIComponent('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8')}`;
+
+    const streamQualities = {
+        'VidLink Pro (1080p Ultra)': vidlinkUrl,
+        'VidSrc VIP (1080p HD)': vidsrcUrl,
+        '2Embed Direct (1080p Mirror)': embed2Url,
+        'AutoEmbed Multi-CDN': autoembedUrl,
+        'Direct HLS Master': masterHlsUrl,
     };
 
-    // Construct primary direct response
-    const primaryUrl = directHlsStreams['1080p FHD'];
+    const primaryUrl = vidlinkUrl;
     const responseData = {
         success: true,
         tmdbId,
         imdbId,
         type,
-        season: type === 'tv' ? season : undefined,
-        episode: type === 'tv' ? episode : undefined,
+        season: isTv ? season : undefined,
+        episode: isTv ? episode : undefined,
         stream: {
             url: primaryUrl,
-            type: 'mp4',
-            quality: '1080p',
-            qualities: directHlsStreams,
+            type: 'embed',
+            quality: '1080p Ultra',
+            qualities: streamQualities,
             audio: 'Dolby Digital 5.1',
             audioTracks: [
                 { id: 0, name: 'English (Original 5.1)', lang: 'en' },
                 { id: 1, name: 'English (Stereo)', lang: 'en' },
             ],
-            provider: 'notflix-direct',
+            provider: 'vidlink-pro',
         },
         subtitles,
         cached: false,
@@ -229,7 +248,7 @@ function rewriteM3U8Manifest(manifestText, baseUrl, proxyBase = '/api/stream/pro
  */
 export async function handleStreamProxy(req, res) {
     const targetUrl = req.query.url;
-    const referer = req.query.referer || targetUrl;
+    const referer = req.query.referer;
 
     if (!targetUrl) {
         return res.status(400).send('Missing url parameter');
@@ -241,7 +260,7 @@ export async function handleStreamProxy(req, res) {
             'Accept': '*/*',
         };
 
-        if (referer) {
+        if (referer && referer !== targetUrl) {
             forwardHeaders['Referer'] = referer;
             try {
                 forwardHeaders['Origin'] = new URL(referer).origin;
