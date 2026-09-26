@@ -1,0 +1,417 @@
+import { supabase, supabaseAnon } from './supabaseClient';
+import defaultAvatar from '../assets/netflix-profile-pictures-1000-x-1000-qo9h82134t9nv0j0.jpg';
+
+const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original';
+function normalizeUsernameToEmail(input) {
+    const clean = String(input || '').trim().toLowerCase();
+    if (clean.includes('@')) return clean;
+    const sanitized = clean.replace(/[^a-z0-9_.-]/g, '');
+    return `${sanitized || 'user'}@notflix.app`;
+}
+
+export const SupabaseDB = {
+    // ════════ AUTHENTICATION ════════
+
+    signUp: async (username, email, password) => {
+        const cleanUsername = String(username || '').trim();
+        const cleanEmail = String(email || '').trim().toLowerCase();
+        
+        try {
+            const { data, error } = await supabase.auth.signUp({
+                email: cleanEmail,
+                password,
+                options: {
+                    data: { username: cleanUsername }
+                }
+            });
+            if (error) {
+                if (error.message && (error.message.toLowerCase().includes('already registered') || error.message.toLowerCase().includes('already exists'))) {
+                    return await SupabaseDB.signIn(cleanEmail, password);
+                }
+                throw error;
+            }
+            if (data?.session) {
+                if (data.user?.id) {
+                    await SupabaseDB.updateProfile(data.user.id, cleanUsername, defaultAvatar);
+                }
+                return data;
+            }
+            // Auto login after signup
+            return await SupabaseDB.signIn(cleanEmail, password);
+        } catch (err) {
+            try {
+                return await SupabaseDB.signIn(cleanEmail, password);
+            } catch {
+                throw err;
+            }
+        }
+    },
+
+    signIn: async (usernameOrEmail, password) => {
+        const raw = String(usernameOrEmail || '').trim();
+        let targetEmail = raw;
+        
+        // If not an email, resolve email by username via RPC
+        if (!raw.includes('@')) {
+            try {
+                const { data: resolvedEmail } = await supabaseAnon.rpc('get_email_by_username', {
+                    p_username: raw
+                });
+                if (resolvedEmail) {
+                    targetEmail = resolvedEmail;
+                } else {
+                    targetEmail = `${raw.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@notflix.app`;
+                }
+            } catch {
+                targetEmail = `${raw.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@notflix.app`;
+            }
+        }
+        
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: targetEmail,
+            password
+        });
+        if (error) throw error;
+        return data;
+    },
+
+    signInWithOtp: async (email) => {
+        const { data, error } = await supabase.auth.signInWithOtp({
+            email,
+            options: {
+                shouldCreateUser: true
+            }
+        });
+        if (error) throw error;
+        return data;
+    },
+
+    verifyOtp: async (email, token) => {
+        const trimmedToken = token.trim();
+        // Try type 'signup' first, then fallback to 'email'
+        let result = await supabase.auth.verifyOtp({
+            email,
+            token: trimmedToken,
+            type: 'signup'
+        });
+        if (result.error) {
+            result = await supabase.auth.verifyOtp({
+                email,
+                token: trimmedToken,
+                type: 'email'
+            });
+        }
+        if (result.error) throw result.error;
+        return result.data;
+    },
+
+    resendOtp: async (email) => {
+        const { data, error } = await supabase.auth.resend({
+            type: 'signup',
+            email
+        });
+        if (error) {
+            const fallback = await supabase.auth.signInWithOtp({ email });
+            if (fallback.error) throw fallback.error;
+            return fallback.data;
+        }
+        return data;
+    },
+
+    signOut: async () => {
+        try {
+            const { error } = await supabase.auth.signOut();
+            if (error) throw error;
+        } catch (error) {
+            console.error("SignOut network error, forcing local clear:", error);
+        } finally {
+            // Clear local storage manually as a fallback
+            localStorage.removeItem('supabase-auth-token');
+            // Also check for standard sb- prefix just in case it ever changes
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+                    localStorage.removeItem(key);
+                }
+            });
+            // Force a clean reload to the root to ensure React state resets properly
+            // This avoids the black screen issue caused by hash-routing reload conflicts
+            window.location.replace('/');
+        }
+    },
+
+    getSession: async () => {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        return session;
+    },
+
+    onAuthStateChange: (callback) => {
+        return supabase.auth.onAuthStateChange((event, session) => {
+            callback(session);
+        });
+    },
+
+    // ════════ PROFILES ════════
+
+    getProfile: async (userId, email = '') => {
+        if (!userId) return null;
+        const { data, error } = await supabaseAnon
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .single();
+            
+        if (error && error.code !== 'PGRST116') {
+            console.error("Error fetching profile:", error);
+            return null;
+        }
+        
+        let defaultUsername = 'User';
+        if (email) {
+            const prefix = email.split('@')[0];
+            const parts = prefix.split(/[.\-_]/);
+            if (parts.length > 1 && parts[0] && parts[1]) {
+                defaultUsername = (parts[0][0] + parts[1][0]).toUpperCase();
+            } else if (prefix.length >= 2) {
+                defaultUsername = prefix.substring(0, 2).toUpperCase();
+            } else {
+                defaultUsername = prefix.toUpperCase();
+            }
+        }
+        
+        const profile = data || { id: userId, username: defaultUsername, avatar_url: defaultAvatar };
+        if (!profile.avatar_url) {
+            profile.avatar_url = defaultAvatar;
+        }
+        if (!profile.username || profile.username === 'Anonymous') {
+            profile.username = defaultUsername;
+        }
+        return profile;
+    },
+
+    updateProfile: async (userId, username, avatar_url) => {
+        if (!userId) return null;
+        const { data, error } = await supabaseAnon.rpc('update_user_profile', {
+            p_user_id: userId,
+            p_username: username,
+            p_avatar_url: avatar_url
+        });
+            
+        if (error) throw error;
+        // The RPC returns an array because of SETOF, we return the first element
+        return data && data.length > 0 ? data[0] : null;
+    },
+
+    // ════════ WATCHLIST ════════
+
+    getWatchlist: async (userId) => {
+        if (!userId) return [];
+        const { data, error } = await supabaseAnon.rpc('get_my_watchlist', { u_id: userId });
+        if (error) {
+            console.error("Error fetching watchlist:", error);
+            return [];
+        }
+        return data.map(item => {
+            let fullPoster = item.poster_path || '';
+            if (fullPoster && !fullPoster.startsWith('http')) {
+                fullPoster = `https://image.tmdb.org/t/p/w500${fullPoster}`;
+            }
+            return {
+                id: item.media_id.toString(),
+                type: item.media_type || 'movie',
+                poster: fullPoster,
+                backdrop: fullPoster,
+                title: item.title || 'Untitled',
+                rating: item.rating || 8.5
+            };
+        });
+    },
+
+    toggleWatchlist: async (userId, mediaId, mediaType, posterPath, title, rating = 8.5) => {
+        if (!userId) return false;
+        const numRating = typeof rating === 'number' && !isNaN(rating) && rating > 0 ? rating : 8.5;
+        const { data, error } = await supabaseAnon.rpc('toggle_watchlist_item', {
+            u_id: userId,
+            m_id: parseInt(mediaId),
+            m_type: mediaType,
+            p_path: posterPath || '',
+            t_title: title || 'Unknown Title',
+            p_rating: numRating
+        });
+        if (error) {
+            console.error("Error toggling watchlist:", error);
+            throw error;
+        }
+        return data === 'added' || data === true;
+    },
+
+    isInWatchlist: async (userId, mediaId, mediaType) => {
+        if (!userId) return false;
+        const { data, error } = await supabaseAnon.rpc('is_in_watchlist', {
+            u_id: userId,
+            m_id: parseInt(mediaId),
+            m_type: mediaType
+        });
+        if (error) return false;
+        return data;
+    },
+
+    // ════════ CONTINUE WATCHING CLEANUP ════════
+    wipeContinueWatching: async (userId) => {
+        if (!userId) return [];
+        const { error } = await supabaseAnon.from('continue_watching').delete().eq('user_id', userId);
+        if (error) {
+            console.error("Error wiping continue watching:", error);
+        }
+    },
+
+    wipeUserData: async (userId) => {
+        if (!userId) return;
+        try {
+            await Promise.all([
+                supabaseAnon.from('continue_watching').delete().eq('user_id', userId),
+                supabaseAnon.from('watchlist').delete().eq('user_id', userId),
+                supabaseAnon.from('media_comments').delete().eq('user_id', userId),
+                supabaseAnon.from('profiles').delete().eq('id', userId)
+            ]);
+            await SupabaseDB.signOut();
+        } catch (e) {
+            console.error("Error wiping user data:", e);
+            await SupabaseDB.signOut();
+        }
+    },
+
+    getContinueWatching: async (userId) => {
+        if (!userId) return [];
+        const { data, error } = await supabaseAnon.rpc('get_my_continue_watching', { u_id: userId });
+        if (error) {
+            console.error("Error fetching continue watching:", error);
+            return [];
+        }
+        return data.map(item => {
+            let fullPoster = item.poster_path || item.backdrop_path || '';
+            if (fullPoster && !fullPoster.startsWith('http')) {
+                fullPoster = `https://image.tmdb.org/t/p/w500${fullPoster}`;
+            }
+            const percent = typeof item.progress === 'number'
+                ? (item.progress > 1 ? item.progress : Math.round(item.progress * 100))
+                : 50;
+            const estimatedDuration = item.media_type === 'tv' ? 2700 : 7200;
+            const currentTime = Math.floor((percent / 100) * estimatedDuration);
+
+            return {
+                id: item.media_id.toString(),
+                type: item.media_type || 'movie',
+                backdrop: fullPoster,
+                poster: fullPoster,
+                title: item.title || item.t_title || item.name || 'Untitled Title',
+                percent: percent,
+                currentTime: currentTime,
+                duration: estimatedDuration,
+                season: item.season_number,
+                episode: item.episode_number,
+                lastWatched: item.last_watched
+            };
+        });
+    },
+
+    saveProgress: async (userId, mediaId, mediaType, title, posterPath, progress, season = null, episode = null, backdropPath = null) => {
+        if (!userId) return;
+        const { error } = await supabaseAnon.rpc('save_watch_progress', {
+            u_id: userId,
+            m_id: parseInt(mediaId),
+            m_type: mediaType,
+            t_title: title,
+            p_path: posterPath || '',
+            p_progress: progress,
+            s_num: season,
+            e_num: episode,
+            b_path: backdropPath || posterPath || ''
+        });
+        if (error) {
+            console.error("Error saving progress:", error);
+        }
+    },
+
+    // Remove an item from Continue Watching
+    removeContinueWatchingItem: async (userId, mediaId) => {
+        if (!userId) return;
+        const { error } = await supabaseAnon.rpc('remove_watch_progress', {
+            p_user_id: userId,
+            p_media_id: parseInt(mediaId)
+        });
+        if (error) {
+            console.error('Error removing from Continue Watching:', error);
+        }
+    },
+
+    getMediaReviews: async (mediaId) => {
+        // Query via RPC using supabaseAnon to avoid auth headers which might be triggering local antivirus
+        const { data, error } = await supabaseAnon.rpc('fetch_media_comments', {
+            p_media_id: parseInt(mediaId)
+        });
+            
+        if (error) {
+            console.error("Error fetching feedback:", error);
+            return [];
+        }
+        return (data || []).map((review) => ({
+            id: review.id,
+            user_id: review.user_id,
+            rating: review.rating,
+            comment: review.comment ?? review.content,
+            timestamp: review.timestamp ?? review.created_at,
+            username: review.username,
+            avatar: review.avatar ?? review.avatar_url
+        }));
+    },
+
+    submitReview: async (userId, mediaId, rating, content) => {
+        if (!userId) return { success: false, error: 'No user' };
+        
+        // Insert via RPC using supabaseAnon to avoid auth headers triggering local antivirus
+        const { error: insertError } = await supabaseAnon.rpc('add_media_comment', {
+            p_user_id: userId,
+            p_media_id: parseInt(mediaId),
+            p_rating: rating,
+            p_comment: content
+        });
+        
+        if (insertError) {
+            console.error("Insert media_comments failed:", insertError);
+            return { success: false, error: insertError };
+        }
+        
+        return { success: true };
+    },
+
+    // ════════ SETTINGS ════════
+    // Keep settings in local storage as they are device-specific preferences
+    getSettings: () => {
+        try {
+            const saved = localStorage.getItem('notflix_settings');
+            const parsed = saved ? JSON.parse(saved) : null;
+            return parsed && typeof parsed === 'object' ? parsed : {
+                autoPlayVideo: true,
+                highQuality: true,
+                lightMode: false,
+                notifications: true
+            };
+        } catch (error) {
+            console.error('Error reading settings cache:', error);
+            localStorage.removeItem('notflix_settings');
+            return {
+                autoPlayVideo: true,
+                highQuality: true,
+                lightMode: false,
+                notifications: true
+            };
+        }
+    },
+
+    saveSettings: (settings) => {
+        localStorage.setItem('notflix_settings', JSON.stringify(settings));
+        return settings;
+    }
+};
