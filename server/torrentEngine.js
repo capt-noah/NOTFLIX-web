@@ -227,6 +227,10 @@ export async function handleTorrentStreamRequest(req, res) {
             return res.status(404).json({ error: 'No playable video file found in torrent' });
         }
 
+        if (typeof file.select === 'function') {
+            file.select();
+        }
+
         // Update access timestamp
         activeTorrents.set(torrent.infoHash, {
             torrent,
@@ -235,7 +239,7 @@ export async function handleTorrentStreamRequest(req, res) {
 
         const totalSize = file.length;
         const range = req.headers.range;
-        const mimeType = getMimeType(file.name);
+        const mimeType = file.name.endsWith('.webm') ? 'video/webm' : 'video/mp4';
 
         if (range) {
             const parts = range.replace(/bytes=/, '').split('-');

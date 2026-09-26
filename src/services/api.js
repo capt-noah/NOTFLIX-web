@@ -2,28 +2,35 @@ import { NotFlixData, notflixCatalog } from '../data/catalog.js';
 
 export const HOSTED_BACKEND_URL = 'https://noah.enginner.et/notflix';
 
-const rawApiBase = import.meta.env?.VITE_API_BASE;
+// Environment variable override for local testing (e.g. VITE_API_BASE_URL=http://localhost:3001)
+const envApiUrl = import.meta.env?.VITE_API_BASE_URL || 
+                  import.meta.env?.VITE_BACKEND_URL || 
+                  import.meta.env?.VITE_SERVER_URL || 
+                  import.meta.env?.VITE_API_BASE;
+
 const getSubpathBase = () => {
-    if (typeof rawApiBase === 'string' && rawApiBase.trim()) {
-        return rawApiBase.replace(/\/api\/?$/, '');
+    // 1. Explicit local / dev env variable override
+    if (typeof envApiUrl === 'string' && envApiUrl.trim()) {
+        return envApiUrl.trim().replace(/\/api\/?$/, '').replace(/\/+$/, '');
     }
+
+    // 2. Production browser context detection
     if (typeof window !== 'undefined') {
-        const { hostname, pathname, protocol } = window.location;
-        // Plesk production environment
+        const { hostname, pathname } = window.location;
+        // Plesk production environment on noah.enginner.et
         if (hostname === 'noah.enginner.et' || pathname.startsWith('/notflix')) {
             return '/notflix';
         }
-        // Local development or custom local origins
+        // Localhost without explicit env var uses relative path (handled by Vite proxy)
         if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || hostname.endsWith('.local')) {
             return '';
         }
-        // Standard http/https origins (use same-origin relative path)
-        if (protocol === 'http:' || protocol === 'https:') {
-            return '';
-        }
     }
+
+    // 3. Hardcoded production fallback (Plesk server)
     return HOSTED_BACKEND_URL;
 };
+
 export const API_BASE = getSubpathBase();
 
 const CLIENT_TMDB_KEY = import.meta.env?.VITE_TMDB_API_KEY || import.meta.env?.TMDB_API_KEY || '21269750eb76a0b7c178e43c91b355e5';

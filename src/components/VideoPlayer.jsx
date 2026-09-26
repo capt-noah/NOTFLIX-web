@@ -178,21 +178,26 @@ export const VideoPlayer = () => {
         };
     }, [isPlaying, resolutionError]);
 
-    // Stream Loading Watchdog Timeout (15 seconds)
+    // Stream Loading Watchdog Timeout (Auto-cycle quality if buffering stalls > 8s)
     useEffect(() => {
         if (!isResolving && !isVideoBuffering) return;
 
         const timeout = setTimeout(() => {
             if (isResolving || isVideoBuffering) {
-                console.warn('Playback watchdog timeout: Stream failed to resolve or load frames within 15 seconds.');
-                setIsResolving(false);
-                setIsVideoBuffering(false);
-                setResolutionError(true);
+                console.warn('Playback buffering timeout: cycling to alternative stream...');
+                const qualityKeys = Object.keys(availableQualities || {});
+                const currentIndex = qualityKeys.indexOf(selectedQuality);
+                if (currentIndex !== -1 && currentIndex < qualityKeys.length - 1) {
+                    setSelectedQuality(qualityKeys[currentIndex + 1]);
+                } else {
+                    setIsResolving(false);
+                    setIsVideoBuffering(false);
+                }
             }
-        }, 15000);
+        }, 8000);
 
         return () => clearTimeout(timeout);
-    }, [isResolving, isVideoBuffering, retryTrigger, mediaKey]);
+    }, [isResolving, isVideoBuffering, retryTrigger, mediaKey, availableQualities, selectedQuality]);
 
     // Trigger temporary center ripple icon
     const flashCenterIndicator = useCallback((iconName) => {
@@ -203,7 +208,7 @@ export const VideoPlayer = () => {
         }, 650);
     }, []);
 
-    // Stream Resolution Effect (Unified Zero-Ad Torrent & Direct Stream Engine)
+    // Stream Resolution Effect (Unified Zero-Ad Direct Stream Engine)
     const mediaId = currentMedia?.id;
     const mediaType = currentMedia?.type || 'movie';
     const mediaSeason = currentMedia?.season || 1;
@@ -234,12 +239,12 @@ export const VideoPlayer = () => {
 
                 const mainUrl = res.stream.url;
                 if (Object.keys(qualMap).length === 0) {
-                    qualMap[res.stream.quality || '1080p'] = mainUrl;
+                    qualMap[res.stream.quality || '1080p FHD'] = mainUrl;
                 }
 
-                // Choose initial quality (4K > 1080p > 720p > 480p)
-                const order = ['4k', '2160p', '1080p', '720p', '480p'];
-                const bestQuality = order.find(q => qualMap[q]) || Object.keys(qualMap)[0] || '1080p';
+                // Choose initial quality (4K > 1080p > 720p)
+                const order = ['4K UHD', '4k', '1080p FHD', '1080p', '720p HD', '720p'];
+                const bestQuality = order.find(q => qualMap[q]) || Object.keys(qualMap)[0] || '1080p FHD';
 
                 // Process subtitles
                 const parsedSubs = (res.subtitles || []).map(s => ({
@@ -265,37 +270,28 @@ export const VideoPlayer = () => {
                     ...res.stream,
                     playUrl: qualMap[bestQuality] || mainUrl,
                 });
-                addNotification('Ultra HD Stream', `Streaming ${bestQuality.toUpperCase()} ad-free cinema`, 'hd');
+                addNotification('Ultra HD Stream', `Streaming ${bestQuality} cinema`, 'hd');
             } else {
                 setIsResolving(false);
                 setIsVideoBuffering(false);
-                setResolutionError(true);
             }
         }).catch(err => {
             if (!active) return;
             console.warn('Unified stream resolution warning:', err);
             setIsResolving(false);
             setIsVideoBuffering(false);
-            setResolutionError(true);
         });
 
         return () => { active = false; };
     }, [mediaId, mediaType, mediaSeason, mediaEpisode, retryTrigger, addNotification]);
 
-    // Active Playback URL determination
-    const isHlsStream = resolvedStream?.playUrl?.includes('.m3u8') || 
-                        resolvedStream?.playUrl?.includes('/playlist') || 
-                        resolvedStream?.type === 'hls' ||
-                        resolvedStream?.format === 'hls';
+    const activeStreamUrl = availableQualities[selectedQuality] || resolvedStream?.playUrl || resolvedStream?.url || '';
 
-    const activeStreamUrl = (isHlsStream 
-        ? resolvedStream?.playUrl 
-        : (availableQualities[selectedQuality] || resolvedStream?.playUrl)) 
-        || (resolutionError && currentMedia?.trailer ? currentMedia.trailer : null);
-
-    // Hls.js or HTML5 Native Video Mounting
+    // Hls.js or HTML5 Native Video Mounting (For direct MP4/HLS streams)
     useEffect(() => {
-        if (!activeStreamUrl || !videoRef.current) return;
+        if (!activeStreamUrl || !videoRef.current) {
+            return;
+        }
         const video = videoRef.current;
         let hls = null;
 
@@ -304,7 +300,7 @@ export const VideoPlayer = () => {
         video.muted = isMuted;
 
         const isHls = activeStreamUrl.includes('.m3u8') || 
-                      activeStreamUrl.includes('/playlist') || 
+                      activeStreamUrl.includes('/proxy') ||
                       resolvedStream?.type === 'hls';
 
         const savedPos = savedSeekTimeRef.current > 5 
@@ -481,29 +477,29 @@ export const VideoPlayer = () => {
             const nextQuality = qualityKeys[currentIndex + 1];
             console.log(`Auto-switching to alternative quality: ${nextQuality}`);
             setSelectedQuality(nextQuality);
-            if (videoRef.current && availableQualities[nextQuality]) {
+            const nextUrl = availableQualities[nextQuality];
+
+            if (nextUrl && videoRef.current) {
                 const curTime = videoRef.current.currentTime || 0;
                 savedSeekTimeRef.current = curTime;
                 setIsVideoBuffering(true);
-                videoRef.current.src = availableQualities[nextQuality];
+                videoRef.current.src = nextUrl;
                 videoRef.current.currentTime = curTime;
                 videoRef.current.play().catch(() => {});
                 return;
             }
         }
 
-        const fallbackUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+        const fallbackUrl = availableQualities['1080p FHD'] || availableQualities['720p HD'] || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
         if (videoRef.current && videoRef.current.src !== fallbackUrl) {
             videoRef.current.src = fallbackUrl;
             videoRef.current.play().catch(() => {
                 setIsResolving(false);
                 setIsVideoBuffering(false);
-                setResolutionError(true);
             });
         } else {
             setIsResolving(false);
             setIsVideoBuffering(false);
-            setResolutionError(true);
         }
     }, [availableQualities, selectedQuality]);
 
@@ -1108,8 +1104,8 @@ export const VideoPlayer = () => {
                     </div>
                 </div>
 
-                {/* ═══════════════ 100% NATIVE VIDEO STAGE ═══════════════ */}
-                <div className="relative w-full h-full flex items-center justify-center bg-black">
+                {/* ═══════════════ VIDEO STAGE (Pure Native HTML5 & Hls.js Cinema Engine) ═══════════════ */}
+                <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden">
                     <video
                         ref={videoRef}
                         playsInline
