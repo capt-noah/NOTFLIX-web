@@ -11,6 +11,18 @@ import { handleTorrentStreamRequest } from './torrentEngine.js';
 
 const router = express.Router();
 
+// Permissive CORS middleware for all router endpoints
+router.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range');
+    res.header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
 // Sanitization helpers
 const sanitizeString = (str) => {
     if (typeof str !== 'string') return '';

@@ -471,6 +471,42 @@ export const VideoPlayer = () => {
         }
     }, [selectedQuality, availableQualities, addNotification]);
 
+    // Stream auto-recovery on error
+    const handleVideoError = useCallback(() => {
+        console.warn('Video playback error on current stream.');
+        const qualityKeys = Object.keys(availableQualities || {});
+        const currentIndex = qualityKeys.indexOf(selectedQuality);
+
+        if (currentIndex !== -1 && currentIndex < qualityKeys.length - 1) {
+            const nextQuality = qualityKeys[currentIndex + 1];
+            console.log(`Auto-switching to alternative quality: ${nextQuality}`);
+            setSelectedQuality(nextQuality);
+            if (videoRef.current && availableQualities[nextQuality]) {
+                const curTime = videoRef.current.currentTime || 0;
+                savedSeekTimeRef.current = curTime;
+                setIsVideoBuffering(true);
+                videoRef.current.src = availableQualities[nextQuality];
+                videoRef.current.currentTime = curTime;
+                videoRef.current.play().catch(() => {});
+                return;
+            }
+        }
+
+        const fallbackUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+        if (videoRef.current && videoRef.current.src !== fallbackUrl) {
+            videoRef.current.src = fallbackUrl;
+            videoRef.current.play().catch(() => {
+                setIsResolving(false);
+                setIsVideoBuffering(false);
+                setResolutionError(true);
+            });
+        } else {
+            setIsResolving(false);
+            setIsVideoBuffering(false);
+            setResolutionError(true);
+        }
+    }, [availableQualities, selectedQuality]);
+
     // Audio Track Switcher
     const handleSelectAudio = useCallback((trackId) => {
         setSelectedAudioTrack(trackId);
@@ -1083,6 +1119,7 @@ export const VideoPlayer = () => {
                         onTimeUpdate={handleTimeUpdate}
                         onLoadedMetadata={handleLoadedMetadata}
                         onEnded={handleVideoEnded}
+                        onError={handleVideoError}
                         onWaiting={() => setIsVideoBuffering(true)}
                         onPlaying={() => {
                             setIsPlaying(true);

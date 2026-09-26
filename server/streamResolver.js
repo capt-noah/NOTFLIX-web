@@ -73,8 +73,9 @@ function parseAudio(text) {
  */
 async function resolveTorrentio(imdbId, type = 'movie', season = 1, episode = 1) {
     try {
-        const idPath = type === 'movie' ? imdbId : `${imdbId}:${season}:${episode}`;
-        const url = `https://torrentio.strem.fun/stream/${type}/${idPath}.json`;
+        const stremioType = type === 'tv' ? 'series' : type;
+        const idPath = stremioType === 'series' ? `${imdbId}:${season}:${episode}` : imdbId;
+        const url = `https://torrentio.strem.fun/stream/${stremioType}/${idPath}.json`;
 
         const res = await fetch(url, {
             headers: { 'User-Agent': USER_AGENT },
@@ -112,8 +113,9 @@ async function resolveTorrentio(imdbId, type = 'movie', season = 1, episode = 1)
  */
 async function resolveComet(imdbId, type = 'movie', season = 1, episode = 1) {
     try {
-        const idPath = type === 'movie' ? imdbId : `${imdbId}:${season}:${episode}`;
-        const url = `https://comet.elfhosted.com/stream/${type}/${idPath}.json`;
+        const stremioType = type === 'tv' ? 'series' : type;
+        const idPath = stremioType === 'series' ? `${imdbId}:${season}:${episode}` : imdbId;
+        const url = `https://comet.elfhosted.com/stream/${stremioType}/${idPath}.json`;
 
         const res = await fetch(url, {
             headers: { 'User-Agent': USER_AGENT },
@@ -151,8 +153,9 @@ async function resolveComet(imdbId, type = 'movie', season = 1, episode = 1) {
  */
 async function resolveMediaFusion(imdbId, type = 'movie', season = 1, episode = 1) {
     try {
-        const idPath = type === 'movie' ? imdbId : `${imdbId}:${season}:${episode}`;
-        const url = `https://mediafusion.elfhosted.com/stream/${type}/${idPath}.json`;
+        const stremioType = type === 'tv' ? 'series' : type;
+        const idPath = stremioType === 'series' ? `${imdbId}:${season}:${episode}` : imdbId;
+        const url = `https://mediafusion.elfhosted.com/stream/${stremioType}/${idPath}.json`;
 
         const res = await fetch(url, {
             headers: { 'User-Agent': USER_AGENT },
@@ -223,6 +226,68 @@ async function resolveYTS(imdbId) {
 }
 
 /**
+ * Subtitle Resolver via OpenSubtitles Stremio V3 API
+ */
+async function resolveSubtitles(imdbId, type = 'movie', season = 1, episode = 1) {
+    if (!imdbId) return [];
+    try {
+        const idPath = type === 'tv' ? `series/${imdbId}:${season}:${episode}` : `movie/${imdbId}`;
+        const url = `https://opensubtitles-v3.strem.io/subtitles/${idPath}.json`;
+
+        const res = await fetch(url, {
+            headers: { 'User-Agent': USER_AGENT },
+            signal: AbortSignal.timeout(4000),
+        });
+
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!data || !Array.isArray(data.subtitles)) return [];
+
+        const langMap = {
+            'eng': 'English',
+            'spa': 'Spanish',
+            'fre': 'French',
+            'fra': 'French',
+            'ger': 'German',
+            'deu': 'German',
+            'ita': 'Italian',
+            'por': 'Portuguese',
+            'rus': 'Russian',
+            'ara': 'Arabic',
+            'hin': 'Hindi',
+            'amh': 'Amharic',
+            'jpn': 'Japanese',
+            'kor': 'Korean',
+            'zho': 'Chinese',
+            'chi': 'Chinese',
+        };
+
+        const seenKeys = new Set();
+        const results = [];
+
+        for (const s of data.subtitles) {
+            if (!s.url) continue;
+            const langCode = (s.lang || 'eng').toLowerCase();
+            const label = langMap[langCode] || s.lang || 'English';
+            const uniqueKey = `${langCode}-${label}`;
+
+            if (!seenKeys.has(uniqueKey)) {
+                seenKeys.add(uniqueKey);
+                results.push({
+                    label,
+                    srclang: langCode.slice(0, 2),
+                    url: `/api/stream/subtitles?url=${encodeURIComponent(s.url)}`,
+                });
+            }
+        }
+
+        return results;
+    } catch {
+        return [];
+    }
+}
+
+/**
  * Main Unified Stream Resolver Function
  */
 export async function resolveStream({ tmdbId, type = 'movie', season = 1, episode = 1, provider = 'auto' }) {
@@ -262,13 +327,16 @@ export async function resolveStream({ tmdbId, type = 'movie', season = 1, episod
         }
     }
 
-    // Step 2: Query torrent indexers in parallel with fast timeouts
+    // Step 2: Query torrent indexers & subtitles in parallel with fast timeouts
     let candidates = [];
+    let subtitles = [];
+
     if (imdbId) {
         const queryPromises = [
             resolveTorrentio(imdbId, type, season, episode),
             resolveComet(imdbId, type, season, episode),
             resolveMediaFusion(imdbId, type, season, episode),
+            resolveSubtitles(imdbId, type, season, episode),
         ];
 
         if (type === 'movie') {
@@ -276,9 +344,15 @@ export async function resolveStream({ tmdbId, type = 'movie', season = 1, episod
         }
 
         const settled = await Promise.allSettled(queryPromises);
-        for (const item of settled) {
+        for (let i = 0; i < settled.length; i++) {
+            const item = settled[i];
             if (item.status === 'fulfilled' && Array.isArray(item.value)) {
-                candidates.push(...item.value);
+                if (i === 3) {
+                    // Subtitles promise
+                    subtitles = item.value;
+                } else {
+                    candidates.push(...item.value);
+                }
             }
         }
     }
@@ -355,13 +429,7 @@ export async function resolveStream({ tmdbId, type = 'movie', season = 1, episod
                 provider: best.provider,
                 infoHash: best.infoHash,
             },
-            subtitles: [
-                {
-                    label: 'English [Auto]',
-                    srclang: 'en',
-                    url: `https://opensubtitles.org/download/${imdbId || tmdbId}/en.vtt`,
-                }
-            ],
+            subtitles,
             cached: false,
         };
 

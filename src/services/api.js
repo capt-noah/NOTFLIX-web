@@ -4,12 +4,22 @@ export const HOSTED_BACKEND_URL = 'https://noah.enginner.et/notflix';
 
 const rawApiBase = import.meta.env?.VITE_API_BASE;
 const getSubpathBase = () => {
-    if (typeof rawApiBase === 'string' && rawApiBase.trim() && !rawApiBase.includes('localhost:3001')) {
+    if (typeof rawApiBase === 'string' && rawApiBase.trim()) {
         return rawApiBase.replace(/\/api\/?$/, '');
     }
     if (typeof window !== 'undefined') {
-        if (window.location.hostname === 'noah.enginner.et' || window.location.pathname.startsWith('/notflix')) {
+        const { hostname, pathname, protocol } = window.location;
+        // Plesk production environment
+        if (hostname === 'noah.enginner.et' || pathname.startsWith('/notflix')) {
             return '/notflix';
+        }
+        // Local development or custom local origins
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || hostname.endsWith('.local')) {
+            return '';
+        }
+        // Standard http/https origins (use same-origin relative path)
+        if (protocol === 'http:' || protocol === 'https:') {
+            return '';
         }
     }
     return HOSTED_BACKEND_URL;
@@ -426,7 +436,7 @@ export const TMDBService = {
             try {
                 response = await fetch(`${API_BASE}${endpoint}`, { signal: AbortSignal.timeout(10000) });
             } catch {
-                if (API_BASE !== HOSTED_BACKEND_URL) {
+                if (API_BASE !== HOSTED_BACKEND_URL && typeof window !== 'undefined' && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
                     response = await fetch(`${HOSTED_BACKEND_URL}${endpoint}`, { signal: AbortSignal.timeout(10000) }).catch(() => null);
                 }
             }
@@ -438,7 +448,7 @@ export const TMDBService = {
                     const makeAbsUrl = (u) => {
                         if (!u) return '';
                         if (u.startsWith('http://') || u.startsWith('https://')) return u;
-                        const base = API_BASE.startsWith('http') ? API_BASE : (typeof window !== 'undefined' && window.location.hostname === 'noah.enginner.et' ? '/notflix' : HOSTED_BACKEND_URL);
+                        const base = API_BASE.startsWith('http') ? API_BASE : (API_BASE || '');
                         return `${base}${u.startsWith('/') ? '' : '/'}${u}`;
                     };
 
@@ -452,13 +462,20 @@ export const TMDBService = {
                         absQualities[data.stream.quality || '1080p'] = absStreamUrl;
                     }
 
+                    const absSubtitles = (data.subtitles || []).map(s => ({
+                        ...s,
+                        url: makeAbsUrl(s.url),
+                        vttUrl: makeAbsUrl(s.url),
+                    }));
+
                     return {
                         ...data,
                         stream: {
                             ...data.stream,
                             url: absStreamUrl,
                             qualities: absQualities,
-                        }
+                        },
+                        subtitles: absSubtitles,
                     };
                 }
             }
@@ -506,14 +523,14 @@ export const TMDBService = {
         if (streamUrl.includes('/api/stream/torrent')) return streamUrl;
         const encodedUrl = encodeURIComponent(streamUrl);
         const refParam = referer ? `&referer=${encodeURIComponent(referer)}` : '';
-        const base = API_BASE.startsWith('http') ? API_BASE : (typeof window !== 'undefined' && window.location.hostname === 'noah.enginner.et' ? '/notflix' : HOSTED_BACKEND_URL);
+        const base = API_BASE.startsWith('http') ? API_BASE : (API_BASE || '');
         return `${base}/api/stream/proxy?url=${encodedUrl}${refParam}`;
     },
 
     getSubtitleProxyUrl: (subUrl) => {
         if (!subUrl) return '';
         const encodedUrl = encodeURIComponent(subUrl);
-        const base = API_BASE.startsWith('http') ? API_BASE : (typeof window !== 'undefined' && window.location.hostname === 'noah.enginner.et' ? '/notflix' : HOSTED_BACKEND_URL);
+        const base = API_BASE.startsWith('http') ? API_BASE : (API_BASE || '');
         return `${base}/api/stream/subtitles?url=${encodedUrl}`;
     }
 };

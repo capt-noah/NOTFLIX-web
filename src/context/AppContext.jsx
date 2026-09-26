@@ -5,9 +5,6 @@ import { notflixCatalog } from '../data/catalog';
 
 const AppContext = createContext();
 
-// Shared Supabase registered cloud user ID (matches Desktop default fallback)
-const DEFAULT_CLOUD_USER_ID = '9ec1f463-fb7f-44be-9593-1050e875e2a4';
-
 // Helper to create initial default profiles
 const createDefaultProfiles = (initialName = 'User', avatarUrl = null) => [
     {
@@ -202,7 +199,6 @@ export const AppProvider = ({ children }) => {
     useEffect(() => {
         let active = true;
         const userScope = user ? user.id : 'guest';
-        const effectiveCloudUserId = user ? user.id : DEFAULT_CLOUD_USER_ID;
         const currentProf = profiles.find(p => p.id === activeProfileId) || profiles[0];
         const isPrimaryProfile = currentProf?.id === 'p_main' || currentProf?.id === profiles[0]?.id;
 
@@ -216,8 +212,8 @@ export const AppProvider = ({ children }) => {
             console.error(e);
         }
 
-        if (isPrimaryProfile) {
-            SupabaseDB.getWatchlist(effectiveCloudUserId).then(w => {
+        if (user?.id && isPrimaryProfile) {
+            SupabaseDB.getWatchlist(user.id).then(w => {
                 if (active) {
                     // Merge local items with cloud items
                     const cloudMap = new Map((w || []).map(i => [String(i.id), i]));
@@ -238,9 +234,7 @@ export const AppProvider = ({ children }) => {
                 if (active) setWatchlist(localWl);
             });
         } else {
-            Promise.resolve().then(() => {
-                if (active) setWatchlist(localWl);
-            });
+            setWatchlist(localWl);
         }
 
         // 2. Load Continue Watching
@@ -258,13 +252,13 @@ export const AppProvider = ({ children }) => {
         let localCw = [];
         try {
             const saved = localStorage.getItem(localCwKey);
-            if (saved) localCw = JSON.parse(saved).map(sanitizeCwItem);
+            if (saved) localCw = (JSON.parse(saved) || []).map(sanitizeCwItem);
         } catch (e) {
             console.error(e);
         }
 
-        if (isPrimaryProfile) {
-            SupabaseDB.getContinueWatching(effectiveCloudUserId).then(cw => {
+        if (user?.id && isPrimaryProfile) {
+            SupabaseDB.getContinueWatching(user.id).then(cw => {
                 if (active) {
                     // Merge local metadata (currentTime, duration) into DB continue watching
                     const merged = (cw || []).map(item => {
@@ -287,9 +281,7 @@ export const AppProvider = ({ children }) => {
                 if (active) setContinueWatching(localCw);
             });
         } else {
-            Promise.resolve().then(() => {
-                if (active) setContinueWatching(localCw);
-            });
+            setContinueWatching(localCw);
         }
 
         return () => { active = false; };
@@ -369,8 +361,8 @@ export const AppProvider = ({ children }) => {
             }
 
             // 2. Sync Watchlist
-            if (isPrimaryProfile) {
-                const w = await SupabaseDB.getWatchlist(effectiveCloudUserId);
+            if (user?.id && isPrimaryProfile) {
+                const w = await SupabaseDB.getWatchlist(user.id);
                 if (w) {
                     setWatchlist(w);
                     try {
@@ -382,8 +374,8 @@ export const AppProvider = ({ children }) => {
             }
 
             // 3. Sync Continue Watching
-            if (isPrimaryProfile) {
-                const cw = await SupabaseDB.getContinueWatching(effectiveCloudUserId);
+            if (user?.id && isPrimaryProfile) {
+                const cw = await SupabaseDB.getContinueWatching(user.id);
                 if (cw) {
                     const sanitized = cw.map(item => ({
                         ...item,
@@ -580,9 +572,8 @@ export const AppProvider = ({ children }) => {
 
         // Sync to Supabase Cloud
         const isPrimary = activeProfileId === 'p_main' || activeProfileId === profiles[0]?.id;
-        if (isPrimary) {
-            const effectiveCloudUserId = user ? user.id : DEFAULT_CLOUD_USER_ID;
-            SupabaseDB.toggleWatchlist(effectiveCloudUserId, mediaId, mediaType, posterPath, title, rating).catch(err => {
+        if (user?.id && isPrimary) {
+            SupabaseDB.toggleWatchlist(user.id, mediaId, mediaType, posterPath, title, rating).catch(err => {
                 console.error('Watchlist cloud sync error:', err);
             });
         }
@@ -629,11 +620,10 @@ export const AppProvider = ({ children }) => {
             return updated;
         });
 
-        // Sync to Supabase Cloud
+        // Sync to Supabase Cloud only if authenticated
         const isPrimary = activeProfileId === 'p_main' || activeProfileId === profiles[0]?.id;
-        if (isPrimary) {
-            const effectiveCloudUserId = user ? user.id : DEFAULT_CLOUD_USER_ID;
-            SupabaseDB.saveProgress(effectiveCloudUserId, mediaId, resolvedType, resolvedTitle, resolvedPoster, boundedPercent, isTv ? season : null, isTv ? episode : null, resolvedPoster).catch(err => {
+        if (user?.id && isPrimary) {
+            SupabaseDB.saveProgress(user.id, mediaId, resolvedType, resolvedTitle, resolvedPoster, boundedPercent, isTv ? season : null, isTv ? episode : null, resolvedPoster).catch(err => {
                 console.error("Failed to sync progress to cloud:", err);
             });
         }
@@ -655,9 +645,8 @@ export const AppProvider = ({ children }) => {
         });
 
         const isPrimary = activeProfileId === 'p_main' || activeProfileId === profiles[0]?.id;
-        if (isPrimary) {
-            const effectiveCloudUserId = user ? user.id : DEFAULT_CLOUD_USER_ID;
-            SupabaseDB.removeContinueWatchingItem(effectiveCloudUserId, mediaId).catch(e => {
+        if (user?.id && isPrimary) {
+            SupabaseDB.removeContinueWatchingItem(user.id, mediaId).catch(e => {
                 console.error('Error removing from Continue Watching in cloud:', e);
             });
         }
