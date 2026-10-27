@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: notflix-server
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TMDB_API_KEY
+        value: 21269750eb76a0b7c178e43c91b355e5
+      - key: SUPABASE_URL
+        value: https://ijcptfcyltdrpkrrewzc.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlqY3B0ZmN5bHRkcnBrcnJld3pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxMTE1MTIsImV4cCI6MjEwNTY4NzUxMn0.ycwuFsFf_W_aKh8Cs8niglASGDbKc2dpeIC2dmJ2BM4
