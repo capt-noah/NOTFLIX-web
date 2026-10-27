@@ -1,127 +1,166 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { useLanguage } from '../hooks/useLanguage';
-import { TMDBService, normalizeListResponse } from '../services/tmdb';
-import { HeroBanner } from '../components/HeroBanner';
-import { MediaRow } from '../components/MediaRow';
+import TMDBService from '../services/tmdb';
+import HeroBanner from '../components/HeroBanner';
+import MediaRow from '../components/MediaRow';
 import { HomePageSkeleton } from '../components/Skeleton';
-import { downloadApp } from '../utils/mediaActions';
+
+export const getMediaRoute = (item, play = false) => {
+  if (!item) return '#/';
+  const isAnime = Boolean(
+    item.isAnime ||
+    item.anime ||
+    item.type === 'anime' ||
+    item.category === 'anime' ||
+    (typeof item.tag === 'string' && item.tag.toLowerCase().includes('anime')) ||
+    (item.original_language === 'ja' && (
+      (Array.isArray(item.genre_ids) && item.genre_ids.includes(16)) ||
+      (Array.isArray(item.genres) && item.genres.some(g => (g.name || g).toString().toLowerCase().includes('animation')))
+    ))
+  );
+  const isTv = item.media_type === 'tv' || item.type === 'tv' || Boolean(item.first_air_date) || Boolean(item.season) || Boolean(item.seasons);
+  
+  let path = '#/movie/' + item.id;
+  if (isAnime) {
+    path = '#/anime/' + item.id;
+  } else if (isTv) {
+    path = '#/tv/' + item.id;
+  }
+  return play ? `${path}?play=true` : path;
+};
 
 export const Home = () => {
-    const { continueWatching } = useApp();
-    const { t } = useLanguage();
+  const { continueWatching = [], navigateTo, openDetails } = useApp();
+  const [loading, setLoading] = useState(true);
+  const [trendingMovies, setTrendingMovies] = useState([]);
+  const [trendingTV, setTrendingTV] = useState([]);
+  const [topRatedMovies, setTopRatedMovies] = useState([]);
+  const [topRatedTV, setTopRatedTV] = useState([]);
+  const [nowPlaying, setNowPlaying] = useState([]);
 
-    const [loading, setLoading] = useState(true);
-    const [heroIndex, setHeroIndex] = useState(0);
-    const [trendingMovies, setTrendingMovies] = useState([]);
-    const [trendingTV, setTrendingTV] = useState([]);
-    const [topRatedMovies, setTopRatedMovies] = useState([]);
-    const [topRatedTV, setTopRatedTV] = useState([]);
-    const [nowPlaying, setNowPlaying] = useState([]);
+  useEffect(() => {
+    let active = true;
+    const fetchCatalog = async () => {
+      try {
+        setLoading(true);
+        const [trendingM, trendingT, topM, topT, nowP] = await Promise.allSettled([
+          TMDBService.getTrendingMovies(),
+          TMDBService.getTrendingTV(),
+          TMDBService.getTopRatedMovies(),
+          TMDBService.getTopRatedTV(),
+          TMDBService.getNowPlayingMovies(),
+        ]);
 
-    useEffect(() => {
-        let active = true;
-        const fetchAllData = async () => {
-            try {
-                setLoading(true);
-                const results = await Promise.allSettled([
-                    TMDBService.getTrendingMovies(),
-                    TMDBService.getTrendingTV(),
-                    TMDBService.getTopRatedMovies(),
-                    TMDBService.getTopRatedTV(),
-                    TMDBService.getNowPlayingMovies()
-                ]);
+        if (!active) return;
 
-                if (!active) return;
+        if (trendingM.status === 'fulfilled') setTrendingMovies(trendingM.value || []);
+        if (trendingT.status === 'fulfilled') setTrendingTV(trendingT.value || []);
+        if (topM.status === 'fulfilled') setTopRatedMovies(topM.value || []);
+        if (topT.status === 'fulfilled') setTopRatedTV(topT.value || []);
+        if (nowP.status === 'fulfilled') setNowPlaying(nowP.value || []);
+      } catch (err) {
+        console.error('Failed to load home catalog:', err);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
 
-                if (results[0].status === 'fulfilled') setTrendingMovies(normalizeListResponse(results[0].value));
-                if (results[1].status === 'fulfilled') setTrendingTV(normalizeListResponse(results[1].value));
-                if (results[2].status === 'fulfilled') setTopRatedMovies(normalizeListResponse(results[2].value));
-                if (results[3].status === 'fulfilled') setTopRatedTV(normalizeListResponse(results[3].value));
-                if (results[4].status === 'fulfilled') setNowPlaying(normalizeListResponse(results[4].value));
-            } catch (error) {
-                console.error("Error fetching TMDB data for Home:", error);
-            } finally {
-                if (active) setLoading(false);
-            }
-        };
-        fetchAllData();
-        return () => { active = false; };
-    }, []);
+    fetchCatalog();
+    return () => {
+      active = false;
+    };
+  }, []);
 
-    // Cycle the hero banner every 5 seconds
-    useEffect(() => {
-        if (trendingMovies.length === 0) return;
-        const interval = setInterval(() => {
-            setHeroIndex((prev) => (prev + 1) % Math.min(5, trendingMovies.length));
-        }, 5000);
-        return () => clearInterval(interval);
-    }, [trendingMovies]);
+  if (loading) {
+    return <HomePageSkeleton />;
+  }
 
-    const heroMedia = trendingMovies.length > 0 
-        ? { ...trendingMovies[heroIndex], tag: "Trending This Week" } 
-        : null;
+  const handleSelectMedia = (media) => {
+    openDetails(media);
+  };
 
-    if (loading) {
-        return <HomePageSkeleton />;
-    }
+  const handlePlayMedia = (media) => {
+    navigateTo(getMediaRoute(media, true));
+  };
 
-    return (
-        <div className="w-full pb-16">
-            {heroMedia && <HeroBanner media={heroMedia} />}
+  return (
+    <div className="w-full pb-20 select-none">
+      {/* Top Header Clearance / Spacer */}
+      <div className="h-4 sm:h-6 w-full" />
 
-            <div className="space-y-section-gap relative z-20 -mt-10 md:-mt-20 px-4 md:px-edge-margin max-w-container-max mx-auto">
-                {continueWatching.length > 0 && (
-                    <MediaRow title={t.home.continueWatching} items={continueWatching} type="progress" showViewAll={false} />
-                )}
-                {trendingMovies.length > 0 && (
-                    <MediaRow title={t.home.trendingMovies} items={trendingMovies} type="poster" />
-                )}
-                {trendingTV.length > 0 && (
-                    <MediaRow title={t.home.trendingTV} items={trendingTV} type="poster" />
-                )}
-                {topRatedMovies.length > 0 && (
-                    <MediaRow title={t.home.topRatedMovies} items={topRatedMovies} type="latest" />
-                )}
-                {topRatedTV.length > 0 && (
-                    <MediaRow title={t.home.topRatedTV} items={topRatedTV} type="latest" />
-                )}
-                {nowPlaying.length > 0 && (
-                    <MediaRow title={t.home.nowPlaying} items={nowPlaying} type="latest" />
-                )}
+      {/* Hero Banner Carousel */}
+      {trendingMovies.length > 0 && (
+        <HeroBanner
+          items={trendingMovies.slice(0, 5)}
+          onPlay={handlePlayMedia}
+          onMoreInfo={handleSelectMedia}
+        />
+      )}
 
-                {/* ═══════════════ APP DOWNLOAD FEATURED BANNER ═══════════════ */}
-                <section className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 relative overflow-hidden bg-gradient-to-br from-red-950/40 via-black/70 to-black shadow-2xl my-6">
-                    <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-red-600/10 to-transparent pointer-events-none"></div>
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
-                        <div className="flex items-center gap-4 sm:gap-6 text-left w-full md:w-auto">
-                            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center shrink-0 shadow-xl shadow-red-600/30 border border-red-500/40">
-                                <span className="material-symbols-outlined text-3xl sm:text-4xl text-white">android</span>
-                            </div>
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                    <h3 className="text-lg sm:text-xl font-extrabold text-white truncate">Get the Notflix Mobile App</h3>
-                                    <span className="bg-red-600/20 text-red-400 border border-red-500/30 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full shrink-0">v1.0.1</span>
-                                </div>
-                                <p className="text-white/60 text-xs sm:text-sm mt-1 max-w-xl">
-                                    Stream thousands of movies and TV shows directly on your Android phone or tablet with zero hassle.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
-                            <button 
-                                onClick={() => downloadApp('/Notflix_v1.0.1.APK', 'Notflix_v1.0.1.apk')}
-                                className="btn-primary flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm shadow-xl shadow-red-600/40 hover:scale-105 active:scale-95 transition-all whitespace-nowrap cursor-pointer w-full sm:w-auto"
-                                title="Download APK v1.0.1 (12.6 MB)"
-                            >
-                                <span className="material-symbols-outlined text-xl">download</span>
-                                <span>Download APK (12.6 MB)</span>
-                            </button>
-                        </div>
-                    </div>
-                </section>
-            </div>
-        </div>
-    );
+      {/* Media Rows */}
+      <div className="relative z-20 -mt-8 sm:-mt-16 space-y-2">
+        {/* Continue Watching Row */}
+        {continueWatching.length > 0 && (
+          <MediaRow
+            title="Continue Watching"
+            items={continueWatching}
+            onSelect={handleSelectMedia}
+            onPlay={handlePlayMedia}
+          />
+        )}
+
+        {/* Trending Movies */}
+        {trendingMovies.length > 0 && (
+          <MediaRow
+            title="Trending Movies"
+            items={trendingMovies}
+            onSelect={handleSelectMedia}
+            onPlay={handlePlayMedia}
+          />
+        )}
+
+        {/* Trending TV Series */}
+        {trendingTV.length > 0 && (
+          <MediaRow
+            title="Trending TV Series"
+            items={trendingTV}
+            onSelect={handleSelectMedia}
+            onPlay={handlePlayMedia}
+          />
+        )}
+
+        {/* Top Rated Movies */}
+        {topRatedMovies.length > 0 && (
+          <MediaRow
+            title="Top Rated Blockbusters"
+            items={topRatedMovies}
+            onSelect={handleSelectMedia}
+            onPlay={handlePlayMedia}
+          />
+        )}
+
+        {/* Top Rated TV Shows */}
+        {topRatedTV.length > 0 && (
+          <MediaRow
+            title="Critically Acclaimed TV"
+            items={topRatedTV}
+            onSelect={handleSelectMedia}
+            onPlay={handlePlayMedia}
+          />
+        )}
+
+        {/* Now Playing */}
+        {nowPlaying.length > 0 && (
+          <MediaRow
+            title="Now In Theaters & Global Release"
+            items={nowPlaying}
+            onSelect={handleSelectMedia}
+            onPlay={handlePlayMedia}
+          />
+        )}
+      </div>
+    </div>
+  );
 };
+
 export default Home;

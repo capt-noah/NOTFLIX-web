@@ -380,4 +380,44 @@ export const GridPageSkeleton = ({ title = '', subtitle = '' }) => {
     );
 };
 
+export const ModalCardSkeleton = ({ onClose }) => {
+    return (
+        <div 
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 md:p-6 lg:p-8 animate-fade-in"
+            onClick={onClose}
+        >
+            <div 
+                className="relative w-full max-w-4xl lg:max-w-5xl xl:max-w-[1100px] aspect-[16/9] max-h-[86vh] bg-[#141418] rounded-3xl overflow-hidden border border-white/10 shadow-2xl shadow-black/95 text-left flex flex-col justify-end p-5 sm:p-7 md:p-9"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Close button */}
+                {onClose && (
+                    <button
+                        onClick={onClose}
+                        className="absolute top-4 right-4 sm:top-5 sm:right-5 z-40 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/70 text-white flex items-center justify-center border border-white/20 cursor-pointer"
+                    >
+                        <span className="material-symbols-outlined text-2xl">close</span>
+                    </button>
+                )}
+
+                {/* Shimmer backdrop */}
+                <div className="absolute inset-0 bg-neutral-900 skeleton-shimmer opacity-40"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-[#141418] via-[#141418]/60 to-transparent"></div>
+
+                {/* Bottom Left Details Skeleton */}
+                <div className="relative z-10 space-y-3 max-w-2xl">
+                    <Skeleton className="w-3/4 h-8 sm:h-11 rounded-xl" />
+                    <Skeleton className="w-1/2 h-5 rounded-lg" />
+                    <Skeleton className="w-5/6 h-4 rounded" />
+                    <Skeleton className="w-2/3 h-4 rounded" />
+                    <div className="flex items-center gap-3.5 pt-1.5">
+                        <Skeleton className="w-28 sm:w-36 h-10 sm:h-12 rounded-xl" />
+                        <Skeleton variant="circle" className="w-11 sm:w-12 h-11 sm:h-12" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export default Skeleton;

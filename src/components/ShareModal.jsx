@@ -111,10 +111,10 @@ export const ShareModal = ({ isOpen, onClose, media, type = 'movie' }) => {
                 {/* Movie Preview Card */}
                 <div className="flex items-center gap-3.5 p-3 rounded-2xl bg-white/[0.04] border border-white/10 mb-5">
                     <img 
-                        src={media.poster || media.backdrop || 'https://via.placeholder.com/150'} 
+                        src={media.poster || media.backdrop || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150"><rect width="150" height="150" fill="%231a1a1a"/><text x="75" y="75" font-family="sans-serif" font-size="16" fill="%23333333" text-anchor="middle" dominant-baseline="middle">NO IMAGE</text></svg>'} 
                         alt={media.title}
                         className="w-14 h-20 sm:w-16 sm:h-22 object-cover rounded-xl shadow-md shrink-0 border border-white/10"
-                        onError={(e) => { e.target.src = 'https://via.placeholder.com/150'; }}
+                        onError={(e) => { e.target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150"><rect width="150" height="150" fill="%231a1a1a"/><text x="75" y="75" font-family="sans-serif" font-size="16" fill="%23333333" text-anchor="middle" dominant-baseline="middle">NO IMAGE</text></svg>'; }}
                     />
                     <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1">

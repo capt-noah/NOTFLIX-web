@@ -4,7 +4,7 @@ import { useLanguage } from '../hooks/useLanguage';
 import { SupabaseDB } from '../services/db';
 
 export const AuthModal = () => {
-    const { authModalOpen, setAuthModalOpen, addNotification } = useApp();
+    const { authModalOpen, setAuthModalOpen, addNotification, openProfileGate } = useApp();
     const { t } = useLanguage();
     const [isLogin, setIsLogin] = useState(true);
     const [username, setUsername] = useState('');
@@ -44,13 +44,21 @@ export const AuthModal = () => {
 
         try {
             if (isLogin) {
-                await SupabaseDB.signIn(cleanUsername, password);
+                const res = await SupabaseDB.signIn(cleanUsername, password);
                 addNotification("Welcome Back", `Signed in successfully.`, "verified_user");
                 setAuthModalOpen(false);
+                const loggedInUser = res?.user;
+                if (loggedInUser) {
+                    const profileSelectedKey = `notflix_profile_selected_${loggedInUser.id}`;
+                    if (!localStorage.getItem(profileSelectedKey)) {
+                        openProfileGate?.('select');
+                    }
+                }
             } else {
                 await SupabaseDB.signUp(cleanUsername, cleanEmail, password);
                 addNotification("Account Created", `Welcome to NotFlix, ${cleanUsername}!`, "person_add");
                 setAuthModalOpen(false);
+                openProfileGate?.('select');
             }
         } catch (err) {
             console.error("Auth error:", err);

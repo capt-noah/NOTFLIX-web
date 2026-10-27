@@ -349,6 +349,79 @@ export const notflixCatalog = [
             { name: "Chris Pratt", character: "Cole Briggs", avatar: "https://i.pravatar.cc/100?img=57" }
         ],
         trailer: "https://www.w3schools.com/html/mov_bbb.mp4"
+    },
+    {
+        id: "85937",
+        type: "tv",
+        title: "Demon Slayer: Kimetsu no Yaiba",
+        overview: "It is the Taisho Period in Japan. Tanjiro, a kindhearted boy who sells charcoal for a living, finds his family slaughtered by a demon. To make matters worse, his younger sister Nezuko has been transformed into a demon herself.",
+        backdrop: "https://image.tmdb.org/t/p/original/nTvM4mhqZlHIvUkI1gVnW6XP7GG.jpg",
+        poster: "https://image.tmdb.org/t/p/original/xUfRZu2mi8jH6SzQEJGP6tjBuYj.jpg",
+        rating: 8.7,
+        match: 98,
+        year: 2019,
+        duration: "4 Seasons",
+        genres: ["Animation", "Action", "Fantasy", "Anime"],
+        tag: "Top Rated Anime",
+        cast: [
+            { name: "Natsuki Hanae", character: "Tanjiro Kamado", avatar: "https://i.pravatar.cc/100?img=11" },
+            { name: "Akari Kito", character: "Nezuko Kamado", avatar: "https://i.pravatar.cc/100?img=32" }
+        ],
+        trailer: "https://www.w3schools.com/html/mov_bbb.mp4"
+    },
+    {
+        id: "1429",
+        type: "tv",
+        title: "Attack on Titan",
+        overview: "Several hundred years ago, humans were nearly exterminated by Titans. Eren Yeager vows to cleanse the earth of the giant humanoids who brought humanity to the brink of extinction.",
+        backdrop: "https://image.tmdb.org/t/p/original/8BzxH03iXp1D4n8T3d231B9bW0G.jpg",
+        poster: "https://image.tmdb.org/t/p/original/hTP1DtLGFamjfu8WqjnuQdP1n4i.jpg",
+        rating: 8.9,
+        match: 99,
+        year: 2013,
+        duration: "4 Seasons",
+        genres: ["Animation", "Action", "Sci-Fi", "Anime"],
+        tag: "Masterpiece Anime",
+        cast: [
+            { name: "Yuki Kaji", character: "Eren Yeager", avatar: "https://i.pravatar.cc/100?img=14" }
+        ],
+        trailer: "https://www.w3schools.com/html/mov_bbb.mp4"
+    },
+    {
+        id: "95479",
+        type: "tv",
+        title: "Jujutsu Kaisen",
+        overview: "Yuji Itadori is a boy with tremendous physical strength, though he lives a completely ordinary high school life. One day, to save a classmate who has been attacked by curses, he eats the finger of Ryomen Sukuna, taking the curse into his own soul.",
+        backdrop: "https://image.tmdb.org/t/p/original/gmECX1DvFwOPUCUsrcuh1Ao25yv.jpg",
+        poster: "https://image.tmdb.org/t/p/original/fHpKW59dO3zV6W1iM2EaePqFfI9.jpg",
+        rating: 8.6,
+        match: 96,
+        year: 2020,
+        duration: "2 Seasons",
+        genres: ["Animation", "Action", "Fantasy", "Anime"],
+        tag: "Trending Anime",
+        cast: [
+            { name: "Junya Enoki", character: "Yuji Itadori", avatar: "https://i.pravatar.cc/100?img=18" }
+        ],
+        trailer: "https://www.w3schools.com/html/mov_bbb.mp4"
+    },
+    {
+        id: "105248",
+        type: "tv",
+        title: "Cyberpunk: Edgerunners",
+        overview: "A street kid trying to survive in a technology and body modification-obsessed city of the future. Having everything to lose, he chooses to stay alive by becoming an edgerunner: a mercenary outlaw also known as a cyberpunk.",
+        backdrop: "https://image.tmdb.org/t/p/original/sCOv2vO6Z1m270a4yW8L671b5B9.jpg",
+        poster: "https://image.tmdb.org/t/p/original/7jSWrLND14Zt51w6nS8jX8pA2v5.jpg",
+        rating: 8.6,
+        match: 95,
+        year: 2022,
+        duration: "1 Season",
+        genres: ["Animation", "Action", "Sci-Fi", "Anime"],
+        tag: "Award Winning",
+        cast: [
+            { name: "KENN", character: "David Martinez", avatar: "https://i.pravatar.cc/100?img=22" }
+        ],
+        trailer: "https://www.w3schools.com/html/mov_bbb.mp4"
     }
 ];
 
@@ -357,6 +430,7 @@ export const NotFlixData = {
     getById: (id) => notflixCatalog.find(item => item.id === id),
     getMovies: () => notflixCatalog.filter(item => item.type === "movie"),
     getTVShows: () => notflixCatalog.filter(item => item.type === "tv"),
+    getAnime: () => notflixCatalog.filter(item => item.genres && (item.genres.includes("Anime") || item.genres.includes("Animation"))),
     getByGenre: (genre) => notflixCatalog.filter(item => item.genres.includes(genre)),
     getGenresList: () => {
         const genres = new Set();

@@ -99,7 +99,7 @@ export const ViewingHistory = () => {
                     {history.map((item) => (
                         <div key={item.id} className="group relative glass-surface rounded-xl overflow-hidden aspect-[2/3] border border-white/10">
                             <img 
-                                src={item.backdrop || item.poster || 'https://via.placeholder.com/300x450?text=No+Image'} 
+                                src={item.backdrop || item.poster || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450"><rect width="300" height="450" fill="%231a1a1a"/><text x="150" y="225" font-family="sans-serif" font-size="24" fill="%23333333" text-anchor="middle" dominant-baseline="middle">NO IMAGE</text></svg>'} 
                                 alt={item.title} 
                                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 cursor-pointer"
                                 onClick={() => navigateTo(`#/${item.type}/${item.id}`)}

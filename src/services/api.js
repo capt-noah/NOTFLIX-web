@@ -9,25 +9,24 @@ const envApiUrl = import.meta.env?.VITE_API_BASE_URL ||
                   import.meta.env?.VITE_API_BASE;
 
 const getSubpathBase = () => {
-    // 1. Explicit local / dev env variable override
+    // 1. Production browser context detection (Plesk hosted or /notflix subpath)
+    if (typeof window !== 'undefined') {
+        const { hostname, pathname } = window.location;
+        if (hostname === 'noah.enginner.et' || pathname.startsWith('/notflix')) {
+            return '/notflix';
+        }
+    }
+
+    // 2. Explicit local / dev env variable override
     if (typeof envApiUrl === 'string' && envApiUrl.trim()) {
         return envApiUrl.trim().replace(/\/api\/?$/, '').replace(/\/+$/, '');
     }
 
-    // 2. Production browser context detection
+    // 3. Fallback for browser on other hosts or SSR
     if (typeof window !== 'undefined') {
-        const { hostname, pathname } = window.location;
-        // Plesk production environment on noah.enginner.et
-        if (hostname === 'noah.enginner.et' || pathname.startsWith('/notflix')) {
-            return '/notflix';
-        }
-        // Localhost without explicit env var uses relative path (handled by Vite proxy)
-        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || hostname.endsWith('.local')) {
-            return '';
-        }
+        return '';
     }
 
-    // 3. Hardcoded production fallback (Plesk server)
     return HOSTED_BACKEND_URL;
 };
 
@@ -49,7 +48,8 @@ const isValidImage = (value) => typeof value === 'string' && value.trim().length
 const normalizeMediaItem = (item) => {
     if (!item || typeof item !== 'object') return null;
 
-    const mediaType = item.type === 'tv' ? 'tv' : 'movie';
+    const isAnime = item.type === 'anime' || item.isAnime || item.category === 'anime';
+    const mediaType = isAnime ? 'anime' : (item.type === 'tv' ? 'tv' : 'movie');
     const id = item.id ?? item.tmdb_id;
 
     if (id === undefined || id === null || id === '') return null;
@@ -57,7 +57,9 @@ const normalizeMediaItem = (item) => {
     return {
         ...item,
         id: String(id),
+        tmdbId: String(id),
         type: mediaType,
+        isAnime: isAnime,
         title: item.title || item.name || 'Unknown Title',
         overview: item.overview || '',
         backdrop: isValidImage(item.backdrop) ? item.backdrop : null,
@@ -66,29 +68,39 @@ const normalizeMediaItem = (item) => {
         year: item.year || null,
         duration: item.duration || null,
         genres: Array.isArray(item.genres) ? item.genres : [],
-        tag: item.tag || (mediaType === 'tv' ? 'Series' : 'Movie')
+        tag: item.tag || (isAnime ? 'Anime Series' : (mediaType === 'tv' ? 'Series' : 'Movie'))
     };
 };
 
 const mapTMDBItem = (item, defaultType = 'movie') => {
     if (!item || typeof item !== 'object') return null;
-    const type = item.media_type || defaultType;
-    const title = item.title || item.name || 'Unknown Title';
+    const isAnime = defaultType === 'anime' || item.type === 'anime' || item.isAnime;
+    const type = isAnime ? 'anime' : (item.media_type || (defaultType === 'tv' ? 'tv' : 'movie'));
+    const title = item.title || item.name || item.original_name || item.original_title || 'Unknown Title';
     const match = Math.floor(Math.random() * 15) + 85;
+
+    const backdrop = item.backdrop_path 
+        ? `${IMAGE_BASE_URL}${item.backdrop_path}` 
+        : (item.poster_path ? `${IMAGE_BASE_URL}${item.poster_path}` : null);
+    const poster = item.poster_path 
+        ? `https://image.tmdb.org/t/p/w500${item.poster_path}` 
+        : (item.backdrop_path ? `https://image.tmdb.org/t/p/w500${item.backdrop_path}` : null);
 
     return {
         id: String(item.id),
-        type: type === 'tv' ? 'tv' : 'movie',
+        tmdbId: String(item.id),
+        type: type,
+        isAnime: isAnime,
         title: title,
         overview: item.overview || '',
-        backdrop: item.backdrop_path ? `${IMAGE_BASE_URL}${item.backdrop_path}` : null,
-        poster: item.poster_path ? `${IMAGE_BASE_URL}${item.poster_path}` : null,
+        backdrop: backdrop,
+        poster: poster,
         rating: item.vote_average ? parseFloat(item.vote_average.toFixed(1)) : 0,
         match: match,
         year: item.release_date ? parseInt(item.release_date.substring(0, 4), 10) : (item.first_air_date ? parseInt(item.first_air_date.substring(0, 4), 10) : null),
-        genres: Array.isArray(item.genres) ? item.genres.map(g => g.name || g) : [],
-        tag: type === 'tv' ? 'Series' : 'Movie',
-        duration: type === 'tv' ? '1 Season' : '2h',
+        genres: Array.isArray(item.genres) ? item.genres.map(g => g.name || g) : (Array.isArray(item.genre_ids) ? ['Animation', 'Action'] : (isAnime ? ['Anime'] : [])),
+        tag: isAnime ? 'Anime Series' : (type === 'tv' ? 'Series' : 'Movie'),
+        duration: isAnime ? 'TV Anime' : (type === 'tv' ? '1 Season' : '2h'),
         cast: Array.isArray(item.credits?.cast)
             ? item.credits.cast.slice(0, 10).map(c => ({
                 name: c.name,
@@ -133,6 +145,7 @@ const normalizeDetailsResponse = (data) => {
 };
 
 const apiRequest = async (endpoint, timeoutMs = 2500) => {
+    // 1. Try primary configured API_BASE
     try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -142,23 +155,34 @@ const apiRequest = async (endpoint, timeoutMs = 2500) => {
 
         const data = await response.json().catch(() => null);
 
-        if (!response.ok) {
-            throw new APIError(data?.error || 'API request failed', response.status);
+        if (response.ok && data && typeof data === 'object' && (!data.error || Array.isArray(data.results))) {
+            return data;
         }
-
-        if (!data || typeof data !== 'object') {
-            throw new Error('Invalid response');
-        }
-
-        if (data.error && !Array.isArray(data.results)) {
-            throw new Error(data.error);
-        }
-
-        return data;
-    } catch (error) {
-        if (error instanceof APIError) throw error;
-        throw new APIError('Network error', 0);
+    } catch (primaryErr) {
+        // Primary failed or timed out, attempt hosted fallback
     }
+
+    // 2. Dual-tier fallback to hosted backend on https://noah.enginner.et/notflix
+    if (API_BASE !== HOSTED_BACKEND_URL && !API_BASE.includes('noah.enginner.et')) {
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+            const fallbackUrl = `${HOSTED_BACKEND_URL}${endpoint}`;
+            const response = await fetch(fallbackUrl, { signal: controller.signal })
+                .finally(() => clearTimeout(timer));
+
+            const data = await response.json().catch(() => null);
+
+            if (response.ok && data && typeof data === 'object' && (!data.error || Array.isArray(data.results))) {
+                return data;
+            }
+        } catch (fallbackErr) {
+            // Hosted fallback also failed
+        }
+    }
+
+    throw new APIError('Network error', 0);
 };
 
 const requestListWithFallback = async (endpoint, fallbackFactory, directTMDBPath, defaultType = 'movie') => {
@@ -167,21 +191,23 @@ const requestListWithFallback = async (endpoint, fallbackFactory, directTMDBPath
         const list = normalizeListResponse(data);
         if (list.length > 0) return list;
     } catch {
-        // Backend unreachable or endpoint failed, try direct TMDB if configured
-        if (directTMDBPath && CLIENT_TMDB_KEY) {
-            try {
-                const tmdbData = await fetchDirectTMDB(directTMDBPath);
-                if (tmdbData && Array.isArray(tmdbData.results) && tmdbData.results.length > 0) {
-                    const mapped = tmdbData.results
-                        .map(i => mapTMDBItem(i, defaultType))
-                        .filter(i => i.backdrop && i.poster);
-                    if (mapped.length > 0) return mapped;
-                }
-            } catch {
-                // fall through to catalog
+        // Backend unavailable or 404, silently fallback
+    }
+
+    if (directTMDBPath && CLIENT_TMDB_KEY) {
+        try {
+            const tmdbData = await fetchDirectTMDB(directTMDBPath);
+            if (tmdbData && Array.isArray(tmdbData.results) && tmdbData.results.length > 0) {
+                const mapped = tmdbData.results
+                    .map(i => mapTMDBItem(i, defaultType))
+                    .filter(i => i && (i.backdrop || i.poster));
+                if (mapped.length > 0) return mapped;
             }
+        } catch {
+            // fall through to catalog
         }
     }
+
     const fallback = typeof fallbackFactory === 'function' ? fallbackFactory() : [];
     return normalizeListResponse(fallback);
 };
@@ -211,6 +237,21 @@ const requestMediaWithFallback = async (endpoint, fallbackFactory, directTMDBPat
 export { normalizeListResponse };
 
 export const TMDBService = {
+    getImageUrl: (path, size = 'original') => {
+        if (!path || typeof path !== 'string' || !path.trim()) return '/notflix-logo.png';
+        const trimmed = path.trim();
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/assets') || trimmed.startsWith('data:') || trimmed.startsWith('/notflix-logo.png')) {
+            return trimmed;
+        }
+        const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+        const cleanSize = size === 'w500' || size === 'w300' || size === 'w185' || size === 'w92' || size === 'original' ? size : 'original';
+        return `https://image.tmdb.org/t/p/${cleanSize}${cleanPath}`;
+    },
+    searchMulti: (query) => TMDBService.searchMedia(query),
+    getDetails: (type, id) => TMDBService.getMediaDetails(id, type),
+    getRecommendations: (type, id) => TMDBService.getSimilarMedia(id, type),
+    resolveStream: (tmdbId, type = 'movie', season = 1, episode = 1, provider = 'auto') => 
+        TMDBService.getStreamSource(tmdbId, type, season, episode, provider),
     getTrendingMovies: () => requestListWithFallback(
         '/api/tmdb/trending', 
         () => NotFlixData.getMovies(),
@@ -277,6 +318,63 @@ export const TMDBService = {
         '/tv/popular',
         'tv'
     ),
+    getAnimeTrending: () => requestListWithFallback(
+        '/api/tmdb/anime/trending',
+        () => NotFlixData.getAnime(),
+        '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc',
+        'anime'
+    ),
+    getAnimeAiring: () => requestListWithFallback(
+        '/api/tmdb/anime/airing',
+        () => NotFlixData.getAnime(),
+        '/discover/tv?with_genres=16&with_original_language=ja&air_date.gte=2024-01-01&sort_by=popularity.desc',
+        'anime'
+    ),
+    getAnimePopular: () => requestListWithFallback(
+        '/api/tmdb/anime/popular',
+        () => NotFlixData.getAnime(),
+        '/discover/tv?with_genres=16&with_original_language=ja&sort_by=vote_count.desc',
+        'anime'
+    ),
+    getAnimeTopRated: () => requestListWithFallback(
+        '/api/tmdb/anime/top-rated',
+        () => NotFlixData.getAnime(),
+        '/discover/tv?with_genres=16&with_original_language=ja&sort_by=vote_average.desc&vote_count.gte=100',
+        'anime'
+    ),
+    getAnimeUpcoming: () => requestListWithFallback(
+        '/api/tmdb/anime/upcoming',
+        () => NotFlixData.getAnime(),
+        '/discover/tv?with_genres=16&with_original_language=ja&first_air_date.gte=2025-01-01&sort_by=popularity.desc',
+        'anime'
+    ),
+    getAnimeAction: () => requestListWithFallback(
+        '/api/tmdb/anime/action',
+        () => NotFlixData.getAnime(),
+        '/discover/tv?with_genres=16,10759&with_original_language=ja&sort_by=popularity.desc',
+        'anime'
+    ),
+    getAnimeByGenre: (genre) => {
+        const genreMap = {
+            'Action': '10759',
+            'Adventure': '10759',
+            'Comedy': '35',
+            'Drama': '18',
+            'Fantasy': '10765',
+            'Horror': '9648',
+            'Mystery': '9648',
+            'Romance': '10749',
+            'Sci-Fi': '10765',
+            'Supernatural': '10765'
+        };
+        const genreParam = genreMap[genre] || '16';
+        return requestListWithFallback(
+            `/api/tmdb/anime/genre/${encodeURIComponent(genre)}`,
+            () => NotFlixData.getAnime(),
+            `/discover/tv?with_genres=16,${genreParam}&with_original_language=ja&sort_by=popularity.desc`,
+            'anime'
+        );
+    },
 
     getMediaDetails: (id, type = 'movie') => requestMediaWithFallback(
         `/api/tmdb/${type}/${id}`, 
@@ -443,9 +541,7 @@ export const TMDBService = {
             try {
                 response = await fetch(`${API_BASE}${endpoint}`, { signal: AbortSignal.timeout(10000) });
             } catch {
-                if (API_BASE !== HOSTED_BACKEND_URL && typeof window !== 'undefined' && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
-                    response = await fetch(`${HOSTED_BACKEND_URL}${endpoint}`, { signal: AbortSignal.timeout(10000) }).catch(() => null);
-                }
+                // fallback removed to prevent CORS on local IPs
             }
 
             if (response && response.ok) {

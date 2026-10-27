@@ -13,6 +13,14 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import notflixRouter from './router.js';
 
+// Prevent unhandled errors or socket drops from crashing the Node.js process
+process.on('unhandledRejection', (reason) => {
+    console.error('! Unhandled Promise Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('! Uncaught Exception:', err);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '../dist');
@@ -69,7 +77,7 @@ if (fs.existsSync(distPath)) {
 
     // Root SPA Fallback
     app.get('*', (req, res) => {
-        if (req.path.startsWith('/api')) {
+        if (req.path.startsWith('/api') || req.path.startsWith('/notflix/api')) {
             return res.status(404).json({ error: 'API route not found' });
         }
         const indexPath = path.join(distPath, 'index.html');

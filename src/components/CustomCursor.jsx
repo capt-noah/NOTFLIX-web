@@ -5,25 +5,29 @@ export const CustomCursor = () => {
     const { currentMedia, currentRoute } = useApp();
     const dotRef = useRef(null);
     const circleRef = useRef(null);
+    const containerRef = useRef(null);
     const requestRef = useRef(null);
     
-    // Store positions as refs to avoid re-renders
+    // Store positions as refs to avoid React re-renders
     const mousePos = useRef({ x: -100, y: -100 });
     const circlePos = useRef({ x: -100, y: -100 });
-    
-    const [isHovering, setIsHovering] = useState(false);
+    const [isHoveringPlayer, setIsHoveringPlayer] = useState(false);
     const [isVisible, setIsVisible] = useState(false);
 
     // Determine if we should hide the custom cursor entirely
-    const isDetailsPage = currentRoute && (
-        currentRoute.includes('#/details/') || 
-        currentRoute.includes('#/movie/') || 
-        currentRoute.includes('#/tv/')
+    const isPlayerRoute = Boolean(
+        currentRoute && (
+            currentRoute.includes('#/anime') || 
+            currentRoute.includes('#/details') || 
+            currentRoute.includes('#/movie') || 
+            currentRoute.includes('#/tv') ||
+            currentRoute.includes('play=true')
+        )
     );
-    const isPlayerOpen = !!currentMedia;
-    const shouldHide = isDetailsPage || isPlayerOpen;
+    const isPlayerOpen = Boolean(currentMedia);
+    const shouldHide = isPlayerRoute || isPlayerOpen || isHoveringPlayer;
 
-    // Toggle a body attribute so CSS can restore the default cursor
+    // Toggle body attribute so native OS hardware cursor is restored instantly on player/detail screens
     useEffect(() => {
         if (shouldHide) {
             document.body.setAttribute('data-default-cursor', 'true');
@@ -34,7 +38,6 @@ export const CustomCursor = () => {
     }, [shouldHide]);
 
     useEffect(() => {
-        // Only run on non-touch devices
         let isLoopRunning = false;
 
         const updateCursor = () => {
@@ -52,7 +55,7 @@ export const CustomCursor = () => {
             }
 
             // Sleep when converged to save CPU & GPU cycles
-            if (Math.abs(dx) > 0.2 || Math.abs(dy) > 0.2) {
+            if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
                 requestRef.current = requestAnimationFrame(updateCursor);
             } else {
                 isLoopRunning = false;
@@ -73,10 +76,20 @@ export const CustomCursor = () => {
             startLoop();
         };
 
+        // Zero-render interactive element tracking via CSS classes
         const onMouseOver = (e) => {
             const target = e.target;
-            const isInteractive = !!target.closest('button, a, input, select, textarea, .group, .premium-hover, [role="button"], [role="link"], label');
-            setIsHovering(prev => (prev !== isInteractive ? isInteractive : prev));
+            if (!target) return;
+
+            // 1. Detect if hovering over a video player, iframe, or player stage
+            const overPlayer = Boolean(target.closest('iframe, video, .player-stage, [data-player="true"], .video-player'));
+            setIsHoveringPlayer(prev => (prev !== overPlayer ? overPlayer : prev));
+
+            // 2. Fast interactive hover toggle without React component re-renders
+            const isInteractive = Boolean(target.closest('button, a, input, select, textarea, .group, .premium-hover, [role="button"], [role="link"], label'));
+            if (containerRef.current) {
+                containerRef.current.classList.toggle('cursor-hover', isInteractive);
+            }
         };
 
         const onMouseLeave = () => setIsVisible(false);
@@ -95,7 +108,7 @@ export const CustomCursor = () => {
             document.removeEventListener('mouseover', onMouseOver);
             document.body.removeEventListener('mouseleave', onMouseLeave);
             document.body.removeEventListener('mouseenter', onMouseEnter);
-            cancelAnimationFrame(requestRef.current);
+            if (requestRef.current) cancelAnimationFrame(requestRef.current);
         };
     }, []);
 
@@ -106,28 +119,25 @@ export const CustomCursor = () => {
 
     return (
         <div 
+            ref={containerRef}
             className="pointer-events-none fixed inset-0 z-[9999] overflow-hidden" 
-            style={{ opacity: isVisible && !shouldHide ? 1 : 0, transition: 'opacity 0.3s ease' }}
+            style={{ 
+                opacity: isVisible && !shouldHide ? 1 : 0, 
+                transition: 'opacity 0.25s ease' 
+            }}
         >
-            {/* Outer Circle */}
-            <div ref={circleRef} className="absolute top-0 left-0 will-change-transform">
+            {/* Outer Circle - Hardware-accelerated transform */}
+            <div ref={circleRef} className="absolute top-0 left-0 will-change-transform pointer-events-none">
                 <div 
-                    className={`-ml-[16px] -mt-[16px] w-8 h-8 rounded-full border-2 transition-all duration-300 ease-out flex items-center justify-center
-                        ${isHovering 
-                            ? 'scale-[1.25] border-red-500 bg-red-600/10 shadow-[0_0_15px_rgba(229,9,20,0.5)]' 
-                            : 'scale-100 border-red-600/70 bg-transparent'
-                        }
-                    `}
-                ></div>
+                    className="cursor-circle-inner -ml-[16px] -mt-[16px] w-8 h-8 rounded-full border-2 border-red-600/75 bg-transparent transition-[border-color,background-color,box-shadow,transform] duration-200 ease-out flex items-center justify-center"
+                />
             </div>
             
-            {/* Inner Dot */}
-            <div ref={dotRef} className="absolute top-0 left-0 will-change-transform">
+            {/* Inner Dot - Hardware-accelerated transform */}
+            <div ref={dotRef} className="absolute top-0 left-0 will-change-transform pointer-events-none">
                 <div 
-                    className={`-ml-[4px] -mt-[4px] w-2 h-2 rounded-full transition-all duration-300
-                        ${isHovering ? 'bg-red-500 scale-100 shadow-[0_0_15px_rgba(229,9,20,0.8)]' : 'bg-red-600 scale-100 shadow-[0_0_10px_rgba(229,9,20,0.8)]'}
-                    `}
-                ></div>
+                    className="cursor-dot-inner -ml-[4px] -mt-[4px] w-2 h-2 rounded-full bg-red-600 shadow-[0_0_10px_rgba(229,9,20,0.8)] transition-[background-color,box-shadow,transform] duration-200"
+                />
             </div>
         </div>
     );

@@ -52,9 +52,9 @@ export const AppProvider = ({ children }) => {
         return 'p_main';
     });
 
-    // Profile Gate ("Who's Watching?") state - always required when opening NOTFLIX
-    const [isProfileGateOpen, setIsProfileGateOpen] = useState(true);
-    const [hasSelectedSessionProfile, setHasSelectedSessionProfile] = useState(false);
+    // Profile Gate ("Who's Watching?") state - only triggered on first-time login or explicit user switch
+    const [isProfileGateOpen, setIsProfileGateOpen] = useState(false);
+    const [hasSelectedSessionProfile, setHasSelectedSessionProfile] = useState(true);
     const [profileGateMode, setProfileGateMode] = useState('select'); // 'select' | 'manage'
 
     // Data state
@@ -69,6 +69,11 @@ export const AppProvider = ({ children }) => {
     const [currentMedia, setCurrentMedia] = useState(null);
     const [currentSource, setCurrentSource] = useState('direct'); 
     
+    // Detail Modal state
+    const [selectedDetail, setSelectedDetail] = useState(null);
+    const openDetails = useCallback((media) => setSelectedDetail(media), []);
+    const closeDetails = useCallback(() => setSelectedDetail(null), []);
+
     // Routing state
     const [currentRoute, setCurrentRoute] = useState(window.location.hash || '#/');
 
@@ -110,14 +115,32 @@ export const AppProvider = ({ children }) => {
 
     // ─── INIT AUTH ───
     useEffect(() => {
-        // Get initial session
+        let isInitialLoad = true;
+
+        // Get initial session on page load / reload
         SupabaseDB.getSession().then((session) => {
             setUser(session?.user || null);
-        }).catch(err => console.error("Session error:", err));
+            // Allow initial hydration to complete without firing first-time login gate
+            setTimeout(() => {
+                isInitialLoad = false;
+            }, 600);
+        }).catch(err => {
+            console.error("Session error:", err);
+            isInitialLoad = false;
+        });
 
         // Listen for auth changes
         const { data: { subscription } } = SupabaseDB.onAuthStateChange((session) => {
-            setUser(session?.user || null);
+            const newUser = session?.user || null;
+            // Only trigger if NOT during initial page reload and a user has newly logged in
+            if (!isInitialLoad && newUser) {
+                const profileSelectedKey = `notflix_profile_selected_${newUser.id}`;
+                if (!localStorage.getItem(profileSelectedKey)) {
+                    setIsProfileGateOpen(true);
+                    setHasSelectedSessionProfile(false);
+                }
+            }
+            setUser(newUser);
         });
 
         return () => subscription?.unsubscribe();
@@ -240,9 +263,24 @@ export const AppProvider = ({ children }) => {
         // 2. Load Continue Watching
         const sanitizeCwItem = (item) => {
             if (!item) return item;
-            const isTv = item.type === 'tv';
+            const isTv = item.type === 'tv' || item.media_type === 'tv' || item.type === 'anime';
+            const rawTitle = item.title || item.t_title || item.name || item.original_title || item.original_name;
+            let resolvedTitle = 'Untitled';
+            if (typeof rawTitle === 'object' && rawTitle) {
+                resolvedTitle = rawTitle.english || rawTitle.romaji || rawTitle.userPreferred || rawTitle.native || 'Untitled';
+            } else if (typeof rawTitle === 'string' && rawTitle.trim()) {
+                resolvedTitle = rawTitle.trim();
+            }
+
+            const rawPoster = item.poster || item.poster_path || item.backdrop || item.backdrop_path || item.p_path || item.b_path || item.coverImage?.large || item.image || '';
+
             return {
                 ...item,
+                title: resolvedTitle,
+                poster: rawPoster,
+                backdrop: rawPoster,
+                poster_path: item.poster_path || rawPoster,
+                backdrop_path: item.backdrop_path || rawPoster,
                 season: isTv && item.season !== null && item.season !== undefined ? Number(item.season) : null,
                 episode: isTv && item.episode !== null && item.episode !== undefined ? Number(item.episode) : null,
             };
@@ -263,8 +301,18 @@ export const AppProvider = ({ children }) => {
                     // Merge local metadata (currentTime, duration) into DB continue watching
                     const merged = (cw || []).map(item => {
                         const match = localCw.find(l => String(l.id) === String(item.id));
+                        const titleCandidate = (item.title && item.title !== 'Untitled' && item.title !== 'Untitled Title')
+                            ? item.title
+                            : (match?.title || item.title || 'Untitled');
+                        const posterCandidate = (item.poster && item.poster.trim() && !item.poster.endsWith('/notflix-logo.png'))
+                            ? item.poster
+                            : (match?.poster || item.poster || '');
+
                         return sanitizeCwItem({
                             ...item,
+                            title: titleCandidate,
+                            poster: posterCandidate,
+                            backdrop: posterCandidate,
                             currentTime: match?.currentTime || item.currentTime || 0,
                             duration: match?.duration || item.duration || (item.type === 'tv' ? 2700 : 7200),
                             percent: item.percent || match?.percent || 0
@@ -418,31 +466,32 @@ export const AppProvider = ({ children }) => {
     }, [syncAllData]);
 
     // ─── PROFILE MANAGEMENT ACTIONS ───
-    const openProfileGate = (mode = 'select') => {
+    const openProfileGate = useCallback((mode = 'select') => {
         setProfileGateMode(mode);
         setIsProfileGateOpen(true);
-    };
+    }, []);
 
-    const closeProfileGate = () => {
+    const closeProfileGate = useCallback(() => {
         setIsProfileGateOpen(false);
-    };
+    }, []);
 
-    const switchProfile = (profileId) => {
+    const switchProfile = useCallback((profileId) => {
         const target = profiles.find(p => p.id === profileId);
         if (!target) return;
         const userScope = user ? user.id : 'guest';
         setActiveProfileId(profileId);
         try {
             localStorage.setItem(`notflix_active_profile_id_${userScope}`, profileId);
+            localStorage.setItem(`notflix_profile_selected_${userScope}`, 'true');
         } catch (e) {
             console.error(e);
         }
         setHasSelectedSessionProfile(true);
         setIsProfileGateOpen(false);
         addNotification('Profile Switched', `Welcome back, ${target.name}!`, 'account_circle');
-    };
+    }, [profiles, user, addNotification]);
 
-    const createProfile = ({ name, avatar, isKids = false }) => {
+    const createProfile = useCallback(({ name, avatar, isKids = false }) => {
         if (profiles.length >= 5) {
             addNotification('Limit Reached', 'You can have a maximum of 5 profiles.', 'warning');
             return null;
@@ -465,9 +514,9 @@ export const AppProvider = ({ children }) => {
         }
         addNotification('Profile Created', `Profile "${newProfile.name}" was added.`, 'add_circle');
         return newProfile;
-    };
+    }, [profiles, user, addNotification]);
 
-    const updateProfileData = async (profileId, updates) => {
+    const updateProfileData = useCallback(async (profileId, updates) => {
         const userScope = user ? user.id : 'guest';
         let updatedList = [];
         let updatedItem = null;
@@ -499,9 +548,9 @@ export const AppProvider = ({ children }) => {
         }
 
         return updatedItem;
-    };
+    }, [user, profiles, profile.username, profile.avatar_url]);
 
-    const deleteProfile = (profileId) => {
+    const deleteProfile = useCallback((profileId) => {
         if (profiles.length <= 1) {
             addNotification('Action Blocked', 'You must keep at least one profile.', 'warning');
             return false;
@@ -532,43 +581,46 @@ export const AppProvider = ({ children }) => {
 
         addNotification('Profile Deleted', `Profile "${target?.name || ''}" was removed.`, 'delete');
         return true;
-    };
+    }, [profiles, user, activeProfileId, addNotification]);
 
     // Legacy updateProfile for compatibility with existing profile components
-    const updateProfile = async (username, avatar_url) => {
+    const updateProfile = useCallback(async (username, avatar_url) => {
         return updateProfileData(activeProfileId, { name: username, avatar: avatar_url });
-    };
+    }, [updateProfileData, activeProfileId]);
 
     // ─── WATCHLIST ACTIONS (Profile-Scoped) ───
-    const toggleWatchlist = async (mediaId, mediaType = 'movie', posterPath = '', title = '', rating = null) => {
+    const toggleWatchlist = useCallback(async (mediaId, mediaType = 'movie', posterPath = '', title = '', rating = null) => {
         const userScope = user ? user.id : 'guest';
         const localWatchlistKey = `notflix_watchlist_${userScope}_${activeProfileId}`;
         const strId = String(mediaId);
-        const exists = watchlist.some(item => String(item.id) === strId);
 
-        let newWatchlist;
-        if (exists) {
-            newWatchlist = watchlist.filter(item => String(item.id) !== strId);
-            addNotification('Removed from List', `"${title}" removed from your Watchlist.`, 'bookmark');
-        } else {
-            const newItem = {
-                id: strId,
-                type: mediaType,
-                poster: posterPath,
-                title: title || 'Untitled',
-                rating: rating
-            };
-            newWatchlist = [newItem, ...watchlist];
-            addNotification('Added to List', `"${title}" saved to your Watchlist.`, 'bookmark');
-        }
-
-        // Save locally per profile
-        setWatchlist(newWatchlist);
-        try {
-            localStorage.setItem(localWatchlistKey, JSON.stringify(newWatchlist));
-        } catch (e) {
-            console.error(e);
-        }
+        let added = false;
+        setWatchlist(prev => {
+            const exists = prev.some(item => String(item.id) === strId);
+            let updated;
+            if (exists) {
+                updated = prev.filter(item => String(item.id) !== strId);
+                addNotification('Removed from List', `"${title}" removed from your Watchlist.`, 'bookmark');
+                added = false;
+            } else {
+                const newItem = {
+                    id: strId,
+                    type: mediaType,
+                    poster: posterPath,
+                    title: title || 'Untitled',
+                    rating: rating
+                };
+                updated = [newItem, ...prev];
+                addNotification('Added to List', `"${title}" saved to your Watchlist.`, 'bookmark');
+                added = true;
+            }
+            try {
+                localStorage.setItem(localWatchlistKey, JSON.stringify(updated));
+            } catch (e) {
+                console.error(e);
+            }
+            return updated;
+        });
 
         // Sync to Supabase Cloud
         const isPrimary = activeProfileId === 'p_main' || activeProfileId === profiles[0]?.id;
@@ -578,38 +630,66 @@ export const AppProvider = ({ children }) => {
             });
         }
 
-        return !exists;
-    };
+        return added;
+    }, [user, activeProfileId, profiles, addNotification]);
 
     // ─── CONTINUE WATCHING (Profile-Scoped & Auto-Resume) ───
-    const saveProgress = async (mediaId, percent, _remaining = null, season = null, episode = null, type = null, title = '', poster = '', currentTime = 0, duration = 0) => {
+    const saveProgress = useCallback(async (mediaId, percent, _remaining = null, season = null, episode = null, type = null, title = '', poster = '', currentTime = 0, duration = 0) => {
         void _remaining;
+        if (!mediaId) return;
         const userScope = user ? user.id : 'guest';
         const localCwKey = `notflix_cw_${userScope}_${activeProfileId}`;
         const strId = String(mediaId);
         const resolvedType = type || currentMedia?.type || 'movie';
-        const resolvedTitle = title || currentMedia?.title || 'Untitled';
-        const resolvedPoster = poster || currentMedia?.poster || currentMedia?.backdrop || '';
+        
+        let resolvedTitle = 'Untitled';
+        if (typeof title === 'object' && title) {
+            resolvedTitle = title.english || title.romaji || title.userPreferred || title.native || 'Untitled';
+        } else if (typeof title === 'string' && title.trim() && title !== 'Untitled' && title !== 'Untitled Title') {
+            resolvedTitle = title.trim();
+        } else {
+            const fallbackTitle = currentMedia?.title || currentMedia?.name || currentMedia?.original_title;
+            if (typeof fallbackTitle === 'object' && fallbackTitle) {
+                resolvedTitle = fallbackTitle.english || fallbackTitle.romaji || fallbackTitle.userPreferred || 'Untitled';
+            } else if (typeof fallbackTitle === 'string' && fallbackTitle.trim()) {
+                resolvedTitle = fallbackTitle.trim();
+            }
+        }
 
-        // If completed (> 95%), optionally keep or remove from continue watching
-        const boundedPercent = Math.min(100, Math.max(0, Math.round(percent)));
-        const isTv = resolvedType === 'tv';
+        let resolvedPoster = poster || currentMedia?.poster || currentMedia?.backdrop || currentMedia?.poster_path || currentMedia?.backdrop_path || currentMedia?.coverImage?.large || currentMedia?.image || '';
+        if (typeof resolvedPoster === 'string') {
+            resolvedPoster = resolvedPoster.trim();
+        }
 
-        const entry = {
-            id: strId,
-            type: resolvedType,
-            title: resolvedTitle,
-            poster: resolvedPoster,
-            backdrop: resolvedPoster,
-            percent: boundedPercent,
-            season: isTv && season !== null ? Number(season) : null,
-            episode: isTv && episode !== null ? Number(episode) : null,
-            currentTime: currentTime ? Math.floor(currentTime) : 0,
-            duration: duration ? Math.floor(duration) : 0,
-            lastWatched: new Date().toISOString()
-        };
+        const boundedPercent = Math.min(100, Math.max(0, Math.round(percent || 0)));
+        const isTv = resolvedType === 'tv' || resolvedType === 'anime';
 
         setContinueWatching(prev => {
+            const existing = prev.find(item => String(item.id) === strId);
+            // If existing item had a valid title/poster and the new one is empty/Untitled, preserve existing
+            if (resolvedTitle === 'Untitled' && existing?.title && existing.title !== 'Untitled' && existing.title !== 'Untitled Title') {
+                resolvedTitle = existing.title;
+            }
+            if ((!resolvedPoster || resolvedPoster === '/notflix-logo.png') && existing?.poster && existing.poster !== '/notflix-logo.png') {
+                resolvedPoster = existing.poster;
+            }
+
+            const entry = {
+                id: strId,
+                type: resolvedType,
+                title: resolvedTitle,
+                poster: resolvedPoster,
+                backdrop: resolvedPoster,
+                poster_path: resolvedPoster,
+                backdrop_path: resolvedPoster,
+                percent: boundedPercent,
+                season: isTv && season !== null ? Number(season) : null,
+                episode: isTv && episode !== null ? Number(episode) : null,
+                currentTime: currentTime ? Math.floor(currentTime) : 0,
+                duration: duration ? Math.floor(duration) : 0,
+                lastWatched: new Date().toISOString()
+            };
+
             const filtered = prev.filter(item => String(item.id) !== strId);
             const updated = [entry, ...filtered];
             try {
@@ -623,13 +703,13 @@ export const AppProvider = ({ children }) => {
         // Sync to Supabase Cloud only if authenticated
         const isPrimary = activeProfileId === 'p_main' || activeProfileId === profiles[0]?.id;
         if (user?.id && isPrimary) {
-            SupabaseDB.saveProgress(user.id, mediaId, resolvedType, resolvedTitle, resolvedPoster, boundedPercent, isTv ? season : null, isTv ? episode : null, resolvedPoster).catch(err => {
+            SupabaseDB.saveProgress(user.id, mediaId, resolvedType === 'anime' ? 'tv' : resolvedType, resolvedTitle, resolvedPoster, boundedPercent, isTv ? season : null, isTv ? episode : null, resolvedPoster).catch(err => {
                 console.error("Failed to sync progress to cloud:", err);
             });
         }
-    };
+    }, [user, activeProfileId, profiles, currentMedia]);
 
-    const removeFromContinueWatching = async (mediaId) => {
+    const removeFromContinueWatching = useCallback(async (mediaId) => {
         const userScope = user ? user.id : 'guest';
         const localCwKey = `notflix_cw_${userScope}_${activeProfileId}`;
         const strId = String(mediaId);
@@ -650,10 +730,12 @@ export const AppProvider = ({ children }) => {
                 console.error('Error removing from Continue Watching in cloud:', e);
             });
         }
-    };
+    }, [user, activeProfileId, profiles]);
     
     // Auto-Resume playback launcher
-    const playMedia = (media) => {
+    const playMedia = useCallback((media) => {
+        if (!media) return;
+
         // Calculate resume time in seconds if continuing
         let resumeTime = 0;
         if (media.resumeTime !== undefined && media.resumeTime !== null) {
@@ -661,12 +743,33 @@ export const AppProvider = ({ children }) => {
         } else if (media.currentTime && media.currentTime > 5) {
             resumeTime = media.currentTime;
         } else if (media.percent && media.percent > 2 && media.percent < 95) {
-            // Assume 90 mins (5400s) default duration if duration unknown
             const totalSecs = media.duration || 5400;
             resumeTime = Math.floor((media.percent / 100) * totalSecs);
         }
 
-        const isTv = media.type === 'tv' || (Boolean(media.season) && media.type !== 'movie');
+        const isAnime = Boolean(
+            media.isAnime ||
+            media.type === 'anime' ||
+            media.category === 'anime' ||
+            (typeof media.tag === 'string' && media.tag.toLowerCase().includes('anime')) ||
+            ((media.original_language === 'ja' || media.originalLanguage === 'ja') && (
+                (Array.isArray(media.genre_ids) && media.genre_ids.includes(16)) ||
+                (Array.isArray(media.genres) && media.genres.some(g => {
+                    const name = typeof g === 'string' ? g : g?.name;
+                    return typeof name === 'string' && (name.toLowerCase() === 'animation' || name.toLowerCase() === 'anime');
+                }))
+            ))
+        );
+
+        const isTv = !media.isMovie && (
+            media.type === 'tv' ||
+            media.media_type === 'tv' ||
+            Boolean(media.season) ||
+            Boolean(media.first_air_date) ||
+            Boolean(media.seasons) ||
+            (isAnime && media.format !== 'MOVIE' && !media.isMovie)
+        );
+
         const catalogMatch = notflixCatalog.find(c => String(c.id) === String(media.id));
 
         const cleanMedia = { ...media };
@@ -676,12 +779,14 @@ export const AppProvider = ({ children }) => {
         const mediaToPlay = {
             ...cleanMedia,
             id: String(media.id),
-            type: isTv ? 'tv' : 'movie',
-            title: media.title || catalogMatch?.title || 'Untitled',
-            poster: media.poster || media.backdrop || catalogMatch?.poster || catalogMatch?.backdrop || '',
-            backdrop: media.backdrop || media.poster || catalogMatch?.backdrop || catalogMatch?.poster || '',
+            isAnime,
+            type: isAnime ? 'anime' : (isTv ? 'tv' : 'movie'),
+            title: media.title || media.name || catalogMatch?.title || 'Untitled',
+            poster: media.poster || media.backdrop || media.poster_path || media.backdrop_path || catalogMatch?.poster || '',
+            backdrop: media.backdrop || media.poster || media.backdrop_path || media.poster_path || catalogMatch?.backdrop || '',
             season: isTv ? (media.season || 1) : null,
             episode: isTv ? (media.episode || 1) : null,
+            episodeTitle: media.episodeTitle || media.episode_title || null,
             trailer: media.trailer || catalogMatch?.trailer || null,
             currentTime: resumeTime,
             resumeTime: resumeTime,
@@ -689,31 +794,17 @@ export const AppProvider = ({ children }) => {
         };
 
         setCurrentMedia(mediaToPlay);
+    }, []);
 
-        // Auto-save starting progress
-        saveProgress(
-            mediaToPlay.id,
-            media.percent || 0,
-            null,
-            mediaToPlay.season,
-            mediaToPlay.episode,
-            mediaToPlay.type,
-            mediaToPlay.title,
-            mediaToPlay.poster || mediaToPlay.backdrop,
-            resumeTime,
-            media.duration || 0
-        );
-    };
-
-    const closePlayer = () => {
+    const closePlayer = useCallback(() => {
         setCurrentMedia(null);
-    };
+    }, []);
 
-    const updateSettings = (newSettings) => {
+    const updateSettings = useCallback((newSettings) => {
         const updated = SupabaseDB.saveSettings(newSettings);
         setSettings(updated);
         return updated;
-    };
+    }, []);
 
     return (
         <AppContext.Provider value={{
@@ -754,7 +845,11 @@ export const AppProvider = ({ children }) => {
             adShield,
             toggleAdShield,
             isSyncing,
-            syncAllData
+            syncAllData,
+            selectedDetail,
+            setSelectedDetail,
+            openDetails,
+            closeDetails
         }}>
             {children}
         </AppContext.Provider>

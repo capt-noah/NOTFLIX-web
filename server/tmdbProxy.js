@@ -55,27 +55,60 @@ const setCached = (key, data, ttlMs = CACHE_TTL_MS) => {
 };
 
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/original';
+const POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w500';
 
 const mapTMDBToNotFlix = (item, defaultType = 'movie') => {
-    const type = item.media_type || defaultType;
-    const title = item.title || item.name || 'Unknown Title';
+    const isAnime = defaultType === 'anime' || item.type === 'anime';
+    const type = isAnime ? 'anime' : (item.media_type || defaultType);
+    const title = item.title || item.name || item.original_name || item.original_title || 'Unknown Title';
     const match = Math.floor(Math.random() * 20) + 80;
+
+    let subCount = null;
+    let dubCount = null;
+    let nextAiring = null;
+
+    if (isAnime) {
+        const totalEps = item.number_of_episodes || item.episode_count || 12;
+        subCount = totalEps;
+        dubCount = (item.vote_average >= 7.0 || (item.popularity && item.popularity > 15)) ? Math.max(1, totalEps > 4 ? totalEps - 2 : totalEps) : null;
+        
+        if (item.next_episode_to_air) {
+            const airTime = Math.floor(new Date(item.next_episode_to_air.air_date).getTime() / 1000);
+            nextAiring = {
+                id: item.next_episode_to_air.id,
+                episode: item.next_episode_to_air.episode_number,
+                airingAt: airTime,
+                timeUntilAiring: Math.max(0, airTime - Math.floor(Date.now() / 1000))
+            };
+            subCount = Math.max(1, item.next_episode_to_air.episode_number - 1);
+            if (dubCount) dubCount = Math.max(1, subCount - 2);
+        }
+    }
 
     return {
         id: item.id.toString(),
+        tmdbId: item.id.toString(),
         type: type,
         title: title,
         overview: item.overview || 'No overview available.',
-        backdrop: item.backdrop_path ? `${IMAGE_BASE_URL}${item.backdrop_path}` : null,
-        poster: item.poster_path ? `${IMAGE_BASE_URL}${item.poster_path}` : null,
+        backdrop: item.backdrop_path ? `${IMAGE_BASE_URL}${item.backdrop_path}` : (item.poster_path ? `${IMAGE_BASE_URL}${item.poster_path}` : null),
+        poster: item.poster_path ? `${POSTER_BASE_URL}${item.poster_path}` : (item.backdrop_path ? `${POSTER_BASE_URL}${item.backdrop_path}` : null),
         rating: item.vote_average ? parseFloat(item.vote_average.toFixed(1)) : 0,
         match: match,
         year: item.release_date ? parseInt(item.release_date.substring(0, 4)) : (item.first_air_date ? parseInt(item.first_air_date.substring(0, 4)) : null),
-        genres: [],
-        tag: type === 'movie' ? 'Movie' : 'Series',
-        duration: type === 'movie' ? '2h' : '1 Season',
+        genres: Array.isArray(item.genres) ? item.genres.map(g => g.name || g) : (isAnime ? ['Anime'] : []),
+        tag: isAnime ? 'Anime Series' : (type === 'movie' ? 'Movie' : 'Series'),
+        duration: type === 'movie' ? '2h' : (isAnime ? 'TV Anime' : '1 Season'),
         cast: [],
-        trailer: "https://www.w3schools.com/html/mov_bbb.mp4"
+        trailer: "https://www.w3schools.com/html/mov_bbb.mp4",
+        subCount,
+        dubCount,
+        nextAiringEpisode: nextAiring,
+        episodes: isAnime ? {
+            sub: subCount,
+            dub: dubCount,
+            eps: subCount || 12
+        } : undefined
     };
 };
 
@@ -169,6 +202,31 @@ export const TMDBService = {
         return results.map(item => mapTMDBToNotFlix(item, 'movie')).filter(i => i.backdrop && i.poster);
     },
 
+    getSciFiMovies: async () => {
+        const results = await fetchTMDB('/discover/movie?with_genres=878&sort_by=popularity.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'movie')).filter(i => i.backdrop && i.poster);
+    },
+
+    getHorrorMovies: async () => {
+        const results = await fetchTMDB('/discover/movie?with_genres=27&sort_by=popularity.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'movie')).filter(i => i.backdrop && i.poster);
+    },
+
+    getRomanceMovies: async () => {
+        const results = await fetchTMDB('/discover/movie?with_genres=10749&sort_by=popularity.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'movie')).filter(i => i.backdrop && i.poster);
+    },
+
+    getCrimeMovies: async () => {
+        const results = await fetchTMDB('/discover/movie?with_genres=80&sort_by=popularity.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'movie')).filter(i => i.backdrop && i.poster);
+    },
+
+    getDocumentaryMovies: async () => {
+        const results = await fetchTMDB('/discover/movie?with_genres=99&sort_by=popularity.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'movie')).filter(i => i.backdrop && i.poster);
+    },
+
     getActionTV: async () => {
         const results = await fetchTMDB('/discover/tv?with_genres=10759');
         return results.map(item => mapTMDBToNotFlix(item, 'tv')).filter(i => i.backdrop && i.poster);
@@ -177,6 +235,54 @@ export const TMDBService = {
     getPopularTV: async () => {
         const results = await fetchTMDB('/discover/tv?sort_by=vote_count.desc');
         return results.map(item => mapTMDBToNotFlix(item, 'tv')).filter(i => i.backdrop && i.poster);
+    },
+
+    getAnimeTrending: async () => {
+        const results = await fetchTMDB('/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'anime')).filter(i => i.backdrop || i.poster);
+    },
+
+    getAnimeAiring: async () => {
+        const results = await fetchTMDB('/discover/tv?with_genres=16&with_original_language=ja&air_date.gte=2024-01-01&sort_by=popularity.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'anime')).filter(i => i.backdrop || i.poster);
+    },
+
+    getAnimePopular: async () => {
+        const results = await fetchTMDB('/discover/tv?with_genres=16&with_original_language=ja&sort_by=vote_count.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'anime')).filter(i => i.backdrop || i.poster);
+    },
+
+    getAnimeTopRated: async () => {
+        const results = await fetchTMDB('/discover/tv?with_genres=16&with_original_language=ja&sort_by=vote_average.desc&vote_count.gte=100');
+        return results.map(item => mapTMDBToNotFlix(item, 'anime')).filter(i => i.backdrop || i.poster);
+    },
+
+    getAnimeUpcoming: async () => {
+        const results = await fetchTMDB('/discover/tv?with_genres=16&with_original_language=ja&first_air_date.gte=2025-01-01&sort_by=popularity.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'anime')).filter(i => i.backdrop || i.poster);
+    },
+
+    getAnimeAction: async () => {
+        const results = await fetchTMDB('/discover/tv?with_genres=16,10759&with_original_language=ja&sort_by=popularity.desc');
+        return results.map(item => mapTMDBToNotFlix(item, 'anime')).filter(i => i.backdrop || i.poster);
+    },
+
+    getAnimeByGenre: async (genre) => {
+        const genreMap = {
+            'Action': '10759',
+            'Adventure': '10759',
+            'Comedy': '35',
+            'Drama': '18',
+            'Fantasy': '10765',
+            'Horror': '9648',
+            'Mystery': '9648',
+            'Romance': '10749',
+            'Sci-Fi': '10765',
+            'Supernatural': '10765'
+        };
+        const genreParam = genreMap[genre] || '16';
+        const results = await fetchTMDB(`/discover/tv?with_genres=16,${genreParam}&with_original_language=ja&sort_by=popularity.desc`);
+        return results.map(item => mapTMDBToNotFlix(item, 'anime')).filter(i => i.backdrop || i.poster);
     },
 
     getMediaDetails: async (id, type = 'movie') => {

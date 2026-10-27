@@ -290,9 +290,10 @@ export const SupabaseDB = {
             return [];
         }
         return data.map(item => {
-            let fullPoster = item.poster_path || item.backdrop_path || '';
-            if (fullPoster && !fullPoster.startsWith('http')) {
-                fullPoster = `https://image.tmdb.org/t/p/w500${fullPoster}`;
+            let fullPoster = item.poster_path || item.backdrop_path || item.p_path || item.b_path || '';
+            if (fullPoster && !fullPoster.startsWith('http') && !fullPoster.startsWith('/assets') && !fullPoster.startsWith('data:')) {
+                const clean = fullPoster.startsWith('/') ? fullPoster : `/${fullPoster}`;
+                fullPoster = `https://image.tmdb.org/t/p/w500${clean}`;
             }
             const percent = typeof item.progress === 'number'
                 ? (item.progress > 1 ? item.progress : Math.round(item.progress * 100))
@@ -305,6 +306,8 @@ export const SupabaseDB = {
                 type: item.media_type || 'movie',
                 backdrop: fullPoster,
                 poster: fullPoster,
+                poster_path: fullPoster,
+                backdrop_path: fullPoster,
                 title: item.title || item.t_title || item.name || 'Untitled Title',
                 percent: percent,
                 currentTime: currentTime,
