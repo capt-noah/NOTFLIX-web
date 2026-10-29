@@ -57,6 +57,72 @@ app.get(['/health', '/api/health', '/notflix/health', '/notflix/api/health'], (r
 app.use('/notflix/api', notflixRouter);
 app.use('/api', notflixRouter);
 
+// Dynamic Apple OTA manifest for iOS installation
+app.get(['/ios/manifest.plist', '/notflix/ios/manifest.plist'], (req, res) => {
+    const host = req.get('x-forwarded-host') || req.get('host') || 'localhost:3001';
+    const proto = req.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
+    const ipaUrl = `${proto}://${host}/ios/NOTFLIX-Enterprise.ipa`;
+    const iconUrl = `${proto}://${host}/notflix-logo.png`;
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>items</key>
+    <array>
+        <dict>
+            <key>assets</key>
+            <array>
+                <dict>
+                    <key>kind</key>
+                    <string>software-package</string>
+                    <key>url</key>
+                    <string>${ipaUrl}</string>
+                </dict>
+                <dict>
+                    <key>kind</key>
+                    <string>display-image</string>
+                    <key>needs-shine</key>
+                    <true/>
+                    <key>url</key>
+                    <string>${iconUrl}</string>
+                </dict>
+                <dict>
+                    <key>kind</key>
+                    <string>full-size-image</string>
+                    <key>needs-shine</key>
+                    <true/>
+                    <key>url</key>
+                    <string>${iconUrl}</string>
+                </dict>
+            </array>
+            <key>metadata</key>
+            <dict>
+                <key>bundle-identifier</key>
+                <string>com.gto.supposetv.ent</string>
+                <key>bundle-version</key>
+                <string>1.0.0</string>
+                <key>kind</key>
+                <string>software</string>
+                <key>title</key>
+                <string>NOTFLIX</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>`;
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.send(xml);
+});
+
+// Serve public directory (including /ios) directly
+const publicPath = path.resolve(__dirname, '../public');
+if (fs.existsSync(publicPath)) {
+    app.use(express.static(publicPath));
+    app.use('/notflix', express.static(publicPath));
+}
+
 // ==============================================================================
 // STATIC ASSETS & SPA ROUTING (When running bundled in production / Plesk)
 // ==============================================================================

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Install NOTFLIX for iOS</title>
+    <style>
+        :root {
+            --bg: #0b0c10;
+            --card-bg: #15171e;
+            --accent: #e50914;
+            --accent-glow: rgba(229, 9, 20, 0.35);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border: #232733;
+            --border-highlight: #2f3545;
+            --green: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            overflow-x: hidden;
+        }
+
+        .ambient-glow {
+            position: fixed;
+            top: -120px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 320px;
+            height: 320px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            filter: blur(60px);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 440px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .app-icon {
+            width: 88px;
+            height: 88px;
+            border-radius: 22px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 20px var(--accent-glow);
+            margin: 0 auto 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(145deg, #1f222d, #121318);
+            border: 1px solid var(--border-highlight);
+            font-size: 38px;
+            font-weight: 900;
+            color: var(--accent);
+            letter-spacing: -1.5px;
+        }
+
+        .app-title {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+
+        .app-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: rgba(16, 185, 129, 0.12);
+            color: var(--green);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+        }
+
+        .steps-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .step-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 18px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: border-color 0.2s, transform 0.15s;
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .step-number {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #232733;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .step-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .step-desc {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.45;
+            padding-left: 40px;
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            height: 48px;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 700;
+            text-decoration: none;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #ffffff;
+            box-shadow: 0 4px 16px var(--accent-glow);
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+            background: #c50812;
+        }
+
+        .btn-secondary {
+            background: #232733;
+            color: var(--text-main);
+            border: 1px solid var(--border-highlight);
+        }
+
+        .btn-secondary:active {
+            transform: scale(0.98);
+            background: #2c3240;
+        }
+
+        .footer-note {
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+            padding: 0 12px;
+        }
+
+        .footer-note strong {
+            color: var(--text-main);
+        }
+    </style>
+</head>
+<body>
+    <div class="ambient-glow"></div>
+
+    <div class="container">
+        <div class="header">
+            <div class="app-icon">N</div>
+            <h1 class="app-title">NOTFLIX</h1>
+            <div class="app-badge">
+                <span>●</span> Permanent Native Install (No Revokes)
+            </div>
+        </div>
+
+        <div class="steps-container">
+            <!-- Step 1 -->
+            <div class="step-card">
+                <div class="step-header">
+                    <div class="step-number">1</div>
+                    <div class="step-title">Install Anti-Revoke Protection</div>
+                </div>
+                <div class="step-desc">
+                    Blocks Apple from revoking the app certificate. Tap install, then go to <strong>Settings → Profile Downloaded → Install</strong>.
+                </div>
+                <a href="antirevoke.mobileconfig" class="btn btn-secondary">
+                    Download DNS Profile
+                </a>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="step-card">
+                <div class="step-header">
+                    <div class="step-number">2</div>
+                    <div class="step-title">Install NOTFLIX App</div>
+                </div>
+                <div class="step-desc">
+                    Taps Apple's native Over-The-Air installer. When prompted, tap <strong>Install</strong>.
+                </div>
+                <a id="installBtn" href="itms-services://?action=download-manifest&url=https://notflix-server.onrender.com/ios/manifest.plist" class="btn btn-primary">
+                    Install NOTFLIX
+                </a>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="step-card">
+                <div class="step-header">
+                    <div class="step-number">3</div>
+                    <div class="step-title">Trust Developer Profile</div>
+                </div>
+                <div class="step-desc">
+                    Go to <strong>Settings → General → VPN & Device Management</strong>, select the Enterprise Profile under Enterprise App (<strong>GLOBAL TAKEOFF, INC</strong>), and tap <strong>Trust</strong>.
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-note">
+            Zero 7-day limit • Zero computer tethering • Never expires as long as DNS profile remains active.
+        </div>
+    </div>
+
+    <script>
+        if (typeof window !== 'undefined') {
+            const manifestUrl = window.location.origin + '/ios/manifest.plist';
+            const btn = document.getElementById('installBtn');
+            if (btn) {
+                btn.href = 'itms-services://?action=download-manifest&url=' + encodeURIComponent(manifestUrl);
+            }
+        }
+    </script>
+</body>
+</html>
